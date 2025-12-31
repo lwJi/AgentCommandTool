@@ -130,7 +130,8 @@ See **Archive** definition in §2. Non-working-set state is retained by ID but t
    - Specialists generate candidates per packet (optionally in parallel).
 
 4. **Verify**
-   - Verifier evaluates each candidate against criteria and issues a report.
+   - Verifier evaluates each candidate against the **criterion IDs owned by its packet** (per the Criteria Coverage Map) and issues a report.
+   - **Integration-level** criteria are **not** evaluated here; they are reserved for **Finalize**.
 
 5. **Decide**
    - Manager chooses next action based on report(s):
@@ -142,12 +143,12 @@ See **Archive** definition in §2. Non-working-set state is retained by ID but t
 
 7. **Iterate**
    - Apply the decision and repeat until pass or stop conditions trigger.
-   - On stop condition (budget exhausted, escalation threshold, etc.) → proceed to **Finalize**.
+   - On any stop condition (budget exhausted, escalation threshold, max uncertainty, etc.) → proceed to **Finalize** with an explicit **exit status** matching the stop condition.
 
 8. **Finalize**
    - Verifier evaluates any **integration-level** criterion IDs and issues the final verification report(s) with explicit PASS/FAIL/UNKNOWN coverage.
    - Manager outputs the best candidate(s) + the latest verifier report(s) + decision rationale.
-   - If no candidate passes: output the best non-passing candidate with **exit status: BUDGET_EXHAUSTED**, attach the latest verification report, and document unmet criteria.
+   - If no candidate passes: output the best non-passing candidate with an **exit status** that matches the triggered stop condition (e.g., **BUDGET_EXHAUSTED**, **ESCALATED**, **UNCERTAINTY_LIMIT**, **ITERATION_LIMIT**), attach the latest verification report, and document unmet criteria.
 
 ---
 
@@ -225,6 +226,7 @@ Define before iteration starts:
 - maximum tolerated uncertainty,
 - “accept with waiver” rules (which criteria may be waived, who decides, and how it’s recorded),
 - escalation thresholds (e.g., repeated same failure N times).
+ - explicit **exit status labels** for each stop condition (used in **Finalize**).
 
 ---
 
@@ -260,6 +262,6 @@ Define before iteration starts:
 ## 8) Definition of "Done" (architectural)
 A result is "done" only when:
 - the final candidate **passes** acceptance criteria (or waivers are explicitly recorded), **OR**
-- the system exits with **BUDGET_EXHAUSTED** status (best non-passing candidate + unmet criteria documented),
+- the system exits with an explicit **stop-condition status** (e.g., **BUDGET_EXHAUSTED**, **ESCALATED**, **UNCERTAINTY_LIMIT**, **ITERATION_LIMIT**) and provides the best non-passing candidate + unmet criteria documented,
 - verification reports are attached and internally consistent,
 - the decision log explains *why this is the selected output*.
