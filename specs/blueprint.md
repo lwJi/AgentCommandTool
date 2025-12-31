@@ -133,9 +133,11 @@ All older candidates, reports, evidence artifacts, and decision details are reta
 
 7. **Iterate**
    - Apply the decision and repeat until pass or stop conditions trigger.
+   - On stop condition (budget exhausted, escalation threshold, etc.) → proceed to **Finalize**.
 
 8. **Finalize**
-   - Manager outputs the best passing candidate(s) + the final verification report(s) and decision rationale.
+   - Manager outputs the best candidate(s) + the final verification report(s) and decision rationale.
+   - If no candidate passes: output the best non-passing candidate with **exit status: BUDGET_EXHAUSTED**, attach the latest verification report, and document unmet criteria.
    - Any **integration-level** criterion IDs are verified here and must have explicit PASS/FAIL/UNKNOWN coverage.
 
 ---
@@ -198,8 +200,8 @@ The Manager selects a policy based on failure type and convergence behavior:
   - Use when failures are local and report is actionable.
 - **Re-plan (Manager changes decomposition/spec)**
   - Use when failures indicate wrong assumptions, missing criteria, or broken packet boundaries.
-- **Verifier-guided repair**
-  - Use when Specialists need tighter constraints; Verifier stays anchored to criteria.
+- **Verifier-guided repair** (enhanced diagnostics, not solution proposals)
+  - Use when Specialists need more granular failure analysis; Verifier provides detailed criterion-level breakdowns, evidence gaps, and failure taxonomy labels (per §4) while remaining prohibited from proposing concrete fixes (per §4.1).
 - **Parallel Regeneration**
   - Use to break correlated errors; compare diverse candidates under the same verifier.
 - **Escalation / Modality shift**
@@ -245,9 +247,10 @@ Define before iteration starts:
 
 ---
 
-## 8) Definition of “Done” (architectural)
-A result is “done” only when:
-- the final candidate **passes** acceptance criteria (or waivers are explicitly recorded),
+## 8) Definition of "Done" (architectural)
+A result is "done" only when:
+- the final candidate **passes** acceptance criteria (or waivers are explicitly recorded), **OR**
+- the system exits with **BUDGET_EXHAUSTED** status (best non-passing candidate + unmet criteria documented),
 - verification reports are attached and internally consistent,
 - the decision log explains *why this is the selected output*.
 
