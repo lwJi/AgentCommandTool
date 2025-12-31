@@ -145,9 +145,9 @@ See **Archive** definition in §2. Non-working-set state is retained by ID but t
    - On stop condition (budget exhausted, escalation threshold, etc.) → proceed to **Finalize**.
 
 8. **Finalize**
-   - Manager outputs the best candidate(s) + the final verification report(s) and decision rationale.
+   - Verifier evaluates any **integration-level** criterion IDs and issues the final verification report(s) with explicit PASS/FAIL/UNKNOWN coverage.
+   - Manager outputs the best candidate(s) + the latest verifier report(s) + decision rationale.
    - If no candidate passes: output the best non-passing candidate with **exit status: BUDGET_EXHAUSTED**, attach the latest verification report, and document unmet criteria.
-   - Any **integration-level** criterion IDs are verified here and must have explicit PASS/FAIL/UNKNOWN coverage.
 
 ---
 
@@ -159,7 +159,7 @@ A verification report must be **diagnostic**, not stylistic.
   - **UNKNOWN** is mandatory when criteria cannot be verified from the provided spec/evidence (no guessing).
 - **Criteria coverage**: which criteria passed/failed/unknown (**by criterion ID**)
 - **Failure taxonomy**: label each failure (see below)
-- **Repair targets**: concrete “change requests” tied to failed criteria
+- **Repair targets**: concrete, criterion-linked change requirements (what must be true/added/removed), not solution steps
 - **Confidence + severity**: how sure, how costly if wrong
 - **Verifier scope declaration**: confirm compliance with §4.1 inputs/prohibitions (auditor boundaries)
 
@@ -183,6 +183,7 @@ The Verifier is an **auditor**, not a co-author. To preserve stable judgment acr
 - The **Task Spec** (objective, constraints, acceptance criteria including their version number).
 - The **candidate under review** (and its declared assumptions/uncertainty notes).
 - Any **explicit evidence artifacts** attached to the candidate (e.g., citations, calculations, logs), treated as claims to evaluate.
+- Prior **Verification Reports** for the same candidate or criterion, solely to detect inconsistency (not to justify outcomes).
 
 ### Inputs the Verifier must NOT use (to avoid drift and judge-shopping)
 - The Manager’s **Decisions Log** (rationales, preferences, iteration strategy).
@@ -193,7 +194,7 @@ The Verifier is an **auditor**, not a co-author. To preserve stable judgment acr
 - The Verifier **must not**:
   - introduce or modify acceptance criteria,
   - reframe the objective or constraints,
-  - propose concrete solution steps or authored content (no “rewrite it like this”),
+  - propose concrete solution steps or authored content (no “rewrite it like this”); repair targets must remain diagnostic,
   - negotiate waivers (waivers are Manager-only decisions).
 
 ### Required anchoring behavior
@@ -212,7 +213,7 @@ The Manager selects a policy based on failure type and convergence behavior:
 - **Verifier-guided repair** (enhanced diagnostics, not solution proposals)
   - Use when Specialists need more granular failure analysis; Verifier provides detailed criterion-level breakdowns, evidence gaps, and failure taxonomy labels (per §4) while remaining prohibited from proposing concrete fixes (per §4.1).
 - **Parallel Regeneration**
-  - Use to break correlated errors; compare diverse candidates under the same verifier.
+  - Use to break correlated errors; the same verifier evaluates each candidate independently against the same criteria, and the Manager compares the reports.
 - **Escalation / Modality shift**
   - Use when verifier is inconsistent or blind; seek independent judgment.
 
@@ -262,4 +263,3 @@ A result is "done" only when:
 - the system exits with **BUDGET_EXHAUSTED** status (best non-passing candidate + unmet criteria documented),
 - verification reports are attached and internally consistent,
 - the decision log explains *why this is the selected output*.
-
