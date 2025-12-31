@@ -27,7 +27,7 @@ A stable, versioned record that prevents forgetting and goalpost drift:
 - **Task Spec**
   - Objective (one sentence)
   - Constraints (must/must-not)
-  - Acceptance Criteria (testable checklist with **criterion IDs**)
+  - Acceptance Criteria (testable checklist with **criterion IDs**, includes **version number** for change tracking)
   - Risk/priority notes (what errors are costly)
 
 - **Plan / Work Packets**
@@ -56,7 +56,16 @@ A stable, versioned record that prevents forgetting and goalpost drift:
 
 - **Decisions Log**
   - Iteration decisions with rationale (why repair vs re-plan vs escalate)
-  - Criteria changes (what changed, why)
+  - Criteria change rationales (what changed, why—canonical version lives in Task Spec)
+
+- **Delta Summary**
+  - What changed this iteration
+  - Remaining unmet/UNKNOWN criteria by ID
+  - Active candidate IDs (candidates selected by Manager for current iteration)
+
+- **Archive**
+  - Older candidates, reports, evidence artifacts, and decision details retained by ID
+  - Reference-only; not part of Working Set unless explicitly promoted
 
 ---
 
@@ -64,7 +73,7 @@ A stable, versioned record that prevents forgetting and goalpost drift:
 The system maintains a **single canonical shared state**, but each role operates on a **constrained view** of that state to preserve **Verifier independence** and prevent **judge-shopping**.
 
 ### Write authority (who may mutate what)
-- **Manager** may write: **Task Spec**, **Plan / Work Packets**, **Criteria Coverage Map**, **Decisions Log** (including waivers and criteria version changes).
+- **Manager** may write: **Task Spec** (including criteria version updates), **Plan / Work Packets**, **Criteria Coverage Map**, **Decisions Log** (including waivers and criteria change rationales), **Delta Summary**, **Archive**.
 - **Specialists** may write: **Candidates** (including assumptions/uncertainty notes and attached evidence artifacts).
 - **Verifier** may write: **Verification Reports** only.
 
@@ -97,12 +106,12 @@ To prevent iteration from degrading due to unbounded state growth, the canonical
 A bounded, iteration-stable slice containing only what is required to make the *next* decision well:
 - Current **Task Spec** (current criteria version)
 - Current **Plan / Work Packets** and **Criteria Coverage Map**
-- The **active candidates** under consideration (as selected by the Manager for this iteration)
+- The active candidates listed in **Delta Summary** (see §2)
 - The **latest relevant verification report(s)** for those active candidates
-- A **Delta Summary**: a concise record of (a) what changed this iteration, and (b) the remaining unmet/UNKNOWN criteria by ID
+- The current **Delta Summary** (see §2)
 
 ### Archive (reference-only history)
-All older candidates, reports, evidence artifacts, and decision details are retained **by ID** but are **not part of the Working Set** unless explicitly promoted back into it.
+See **Archive** definition in §2. Non-working-set state is retained by ID but treated as non-existent for routine reasoning unless promoted back into the Working Set by the Manager.
 
 **Invariant:** Each iteration ends with a Working Set that fits within the agreed context budget; anything outside the Working Set is treated as non-existent for routine reasoning unless promoted.
 
@@ -171,7 +180,7 @@ The Verifier must be provided an explicit **Auditor View** as defined in §2.1; 
 The Verifier is an **auditor**, not a co-author. To preserve stable judgment across iterations:
 
 ### Inputs the Verifier may use
-- The **Task Spec** (objective, constraints, acceptance criteria) and the **criteria versions** (if present).
+- The **Task Spec** (objective, constraints, acceptance criteria including their version number).
 - The **candidate under review** (and its declared assumptions/uncertainty notes).
 - Any **explicit evidence artifacts** attached to the candidate (e.g., citations, calculations, logs), treated as claims to evaluate.
 
