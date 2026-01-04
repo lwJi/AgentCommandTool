@@ -86,7 +86,7 @@ On verification failure:
 
 | Threshold | Trigger | Action |
 |-----------|---------|--------|
-| 3 consecutive failures | REPLAN | Autonomous re-strategize (new approach without Scout re-query or human input) |
+| 3 consecutive failures | REPLAN | Autonomous re-strategize (new approach, optional Scout re-query, no human input) |
 | 12 total verify loops | Hard Stop | Generate stuck report with Editor-generated hypotheses |
 
 ### Counter Reset
