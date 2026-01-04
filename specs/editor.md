@@ -89,10 +89,38 @@ On verification failure:
 | 3 consecutive failures | REPLAN | Autonomous re-strategize (new approach, optional Scout re-query, no human input) |
 | 12 total verify loops | Hard Stop | Generate stuck report with Editor-generated hypotheses |
 
-### Counter Reset
+### Counter Definitions
 
-- Counters reset **only on full green** (complete PASS from Verifier)
-- Partial progress (e.g., build passes but tests fail) does not reset counters
+The system tracks two separate counters:
+
+| Counter | Increments | Resets |
+|---------|------------|--------|
+| `consecutive_failures` | On each FAIL | On REPLAN or full green |
+| `total_verify_loops` | On each verify attempt | On full green only |
+
+### Counter Behavior
+
+- **REPLAN trigger**: When `consecutive_failures` reaches 3
+- **Hard stop trigger**: When `total_verify_loops` reaches 12
+- **After REPLAN**: `consecutive_failures` resets to 0; `total_verify_loops` continues
+- **On full green**: Both counters reset to 0
+
+### Example Scenario
+
+```
+Attempt 1: FAIL  → consecutive=1, total=1
+Attempt 2: FAIL  → consecutive=2, total=2
+Attempt 3: FAIL  → consecutive=3, total=3 → REPLAN triggered
+                   consecutive resets to 0
+Attempt 4: FAIL  → consecutive=1, total=4
+Attempt 5: FAIL  → consecutive=2, total=5
+Attempt 6: FAIL  → consecutive=3, total=6 → REPLAN triggered
+                   consecutive resets to 0
+...
+Attempt 12: FAIL → total=12 → Hard stop
+```
+
+This allows up to 4 REPLANs (at attempts 3, 6, 9, 12) before hard stop.
 
 ---
 
@@ -123,7 +151,15 @@ REPLAN does NOT:
 When user requests dry-run:
 - Editor proposes changes but does **not** write to filesystem
 - Output format: **Git-style unified diff**
-- User reviews before deciding to apply
+- **Verification is skipped** — no Verifier invocation occurs
+- User reviews diff before deciding to apply
+
+### Post-Apply Verification
+
+When user decides to apply dry-run changes:
+1. Editor writes proposed changes to filesystem
+2. Full verification pipeline runs automatically
+3. Normal debug loop behavior applies (REPLAN at 3 failures, hard stop at 12)
 
 ---
 

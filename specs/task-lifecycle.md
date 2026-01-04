@@ -181,8 +181,9 @@ User explicitly requests dry-run mode at task submission.
 1. Editor analyzes and plans as normal
 2. Generates proposed changes
 3. **Does not write** to filesystem
-4. Outputs **Git-style unified diff** showing proposed changes
-5. User reviews and decides to apply or abort
+4. **Verification is skipped** — Verifier is not invoked
+5. Outputs **Git-style unified diff** showing proposed changes
+6. User reviews and decides to apply or abort
 
 ### Output Format
 
@@ -196,6 +197,14 @@ Standard unified diff:
    // ...
 }
 ```
+
+### Applying Dry-Run Changes
+
+When user decides to apply:
+1. Editor writes proposed changes to filesystem
+2. Full verification pipeline runs automatically
+3. Task transitions to RUNNING state with normal debug loop behavior
+4. On success: generates summary; on failure: REPLAN/hard-stop rules apply
 
 ---
 
@@ -227,10 +236,12 @@ Standard unified diff:
 2. Editor diagnoses from tail log + artifacts
 3. Editor implements fix (fix-forward, no revert)
 4. Editor re-triggers Verifier
-5. If FAIL: increment failure counter, repeat
-6. After 3 consecutive failures: REPLAN (autonomous re-strategize)
+5. If FAIL: increment both counters (consecutive_failures, total_verify_loops)
+6. After 3 consecutive failures: REPLAN triggered, consecutive_failures resets to 0
 7. Continue until green OR 12 total loops reached
 ```
+
+Up to 4 REPLANs possible (at loops 3, 6, 9, 12) before hard stop.
 
 ---
 
