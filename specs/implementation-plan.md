@@ -4,6 +4,107 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 
 ---
 
+## Implementation Decisions
+
+The following decisions were made to clarify implementation details not specified in the core specifications.
+
+### Technology Stack
+
+| Category | Decision |
+|----------|----------|
+| **Language** | Python |
+| **Package Manager** | uv + pyproject.toml (src layout) |
+| **CLI Framework** | Click or Typer with Rich for TUI |
+| **LLM SDK** | Anthropic SDK (primary), OpenAI SDK (fallback) |
+| **Docker SDK** | docker-py |
+| **Testing** | pytest with TDD approach |
+
+### CLI Design
+
+| Aspect | Decision |
+|--------|----------|
+| **Tool Name** | `act` (AgentCommandTool) |
+| **Command Style** | Subcommands: `act run`, `act status`, `act cancel`, `act queue` |
+| **Output Style** | Rich TUI with spinners and live progress updates |
+
+### Platform & Runtime
+
+| Aspect | Decision |
+|--------|----------|
+| **Supported Platforms** | macOS and Linux only (no Windows support) |
+| **Timezone** | UTC for all timestamps (run_id, manifests, logs) |
+| **Docker Resource Limits** | Default: 4 CPU / 8GB RAM |
+| **Crash Recovery** | No recovery — start fresh (dirty working tree preserved) |
+
+### Component Behavior
+
+| Aspect | Decision |
+|--------|----------|
+| **Scout Parallelism** | Parallel queries when independent (Editor decides) |
+| **Stuck Report Location** | `agent/stuck_report.md` (in repo, gitignored) |
+| **LLM Priority** | Claude (Anthropic) as primary backend |
+| **Symlinks** | Use symlinks directly (no Windows copy fallback needed) |
+
+---
+
+## Phase 0: Project Setup
+
+### 0.1 Python Project Structure
+
+**Step 0.1.1: Initialize project with uv**
+
+- Run `uv init` to create project structure
+- Configure `pyproject.toml` with src layout
+- Set minimum Python version to 3.11+
+- Add project metadata (name: `agent-command-tool`, CLI entry point: `act`)
+
+**Test:** Run `uv sync` → virtual environment created. Run `act --help` → CLI responds.
+
+---
+
+**Step 0.1.2: Configure development dependencies**
+
+- Add pytest, pytest-asyncio for testing
+- Add ruff for linting
+- Add mypy for type checking
+- Add pre-commit hooks
+
+**Test:** Run `uv run pytest` → test discovery works. Run `uv run ruff check` → linting works.
+
+---
+
+**Step 0.1.3: Add runtime dependencies**
+
+- anthropic (Anthropic SDK)
+- openai (OpenAI SDK for fallback)
+- docker (docker-py)
+- pyyaml (YAML parsing)
+- rich (TUI components)
+- click or typer (CLI framework)
+
+**Test:** Import all packages in Python → no errors. Basic instantiation works.
+
+---
+
+**Step 0.1.4: Create package structure**
+
+```
+src/
+└── act/
+    ├── __init__.py
+    ├── cli.py           # CLI entry point
+    ├── config/          # Configuration parsing
+    ├── artifacts/       # Artifact management
+    ├── verifier/        # Docker sandbox
+    ├── scouts/          # Scout A and B
+    ├── editor/          # Orchestrator
+    └── task/            # Task lifecycle
+```
+
+**Test:** Run `act --version` → prints version. Package imports work from any module.
+
+---
+
 ## Phase 1: Foundation — Configuration and Artifact Infrastructure
 
 ### 1.1 Configuration Parser
@@ -53,11 +154,11 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 
 **Step 1.2.2: Implement run_id generator**
 
-- Format: `run_{YYYYMMDD}_{HHMMSS}_{random6chars}`
+- Format: `run_{YYYYMMDD}_{HHMMSS}_{random6chars}` (UTC timezone)
 - Ensure uniqueness via random suffix
 - Create run directory: `ARTIFACT_DIR/runs/{run_id}/`
 
-**Test:** Generate 100 run_ids in quick succession → all unique. Directory created at expected path.
+**Test:** Generate 100 run_ids in quick succession → all unique. Directory created at expected path. Timestamps are in UTC.
 
 ---
 
@@ -95,10 +196,10 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 **Step 1.3.2: Implement context snapshot writer**
 
 - Generate incrementing snapshot number: `context_001.md`, `context_002.md`, etc.
-- Write markdown with: timestamp, milestone type, raw Scout payloads, Editor state
-- Update `context_latest.md` symlink (or copy on Windows)
+- Write markdown with: timestamp (UTC), milestone type, raw Scout payloads, Editor state
+- Update `context_latest.md` symlink to point to newest snapshot
 
-**Test:** Write first snapshot → `context_001.md` created, `context_latest.md` points to it. Write second → `context_002.md` created, `context_latest.md` updated.
+**Test:** Write first snapshot → `context_001.md` created, `context_latest.md` symlinks to it. Write second → `context_002.md` created, symlink updated.
 
 ---
 
@@ -137,10 +238,11 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 
 **Step 2.1.3: Implement resource limits**
 
-- Set reasonable CPU and memory limits via Docker
+- Set default limits: 4 CPUs, 8GB RAM via Docker `--cpus` and `--memory` flags
 - Handle resource exhaustion gracefully
+- Limits apply per-container (each verification run)
 
-**Test:** Configure very low memory limit, run memory-intensive command → fails gracefully with `INFRA_ERROR` and `error_type: resource_exhaustion`, not system crash.
+**Test:** Configure very low memory limit (e.g., 64MB), run memory-intensive command → fails gracefully with `INFRA_ERROR` and `error_type: resource_exhaustion`, not system crash.
 
 ---
 
@@ -401,10 +503,11 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 **Step 4.2.1: Implement pull-based Scout queries**
 
 - Editor initiates queries (not push from Scouts)
-- Synchronous blocking calls
-- Wait for response before proceeding
+- Synchronous blocking calls per Scout
+- Support parallel queries when Scout A and Scout B questions are independent
+- Use `asyncio.gather()` for concurrent Scout queries
 
-**Test:** Start task → Editor queries Scout A, waits for response, then proceeds. No parallel Scout execution unless Editor chooses.
+**Test:** Start task → Editor queries Scout A and Scout B in parallel when independent. Both responses received before proceeding. Sequential fallback when queries depend on each other.
 
 ---
 
@@ -557,9 +660,10 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 
 - Hypotheses generated by Editor (Scouts not consulted)
 - All artifact references (run_ids)
-- Persisted for future retry
+- Persisted to `agent/stuck_report.md` for future retry
+- Overwrites previous stuck report if exists
 
-**Test:** Hard stop reached → stuck report contains 3+ hypotheses. Contains all 12 run_ids. File persists after task ends.
+**Test:** Hard stop reached → stuck report at `agent/stuck_report.md` contains 3+ hypotheses. Contains all 12 run_ids. File persists after task ends.
 
 ---
 
@@ -691,12 +795,13 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 
 ### 5.3 Status Updates
 
-**Step 5.3.1: Implement push notification system**
+**Step 5.3.1: Implement real-time status display**
 
-- WebSocket or SSE for real-time updates
-- Stream status milestones to client
+- Use Rich library for live-updating terminal UI
+- Display spinners, progress bars, and status panels
+- Stream status milestones to terminal in real-time
 
-**Test:** Connect WebSocket, start task → receive status updates as they occur. Updates arrive without polling.
+**Test:** Run `act run "task"` → terminal shows live spinner and status updates. Milestones appear as they occur without user action.
 
 ---
 
@@ -715,10 +820,11 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 
 **Step 5.3.3: Implement on-demand detail expansion**
 
-- Summary view by default
+- Summary view by default in terminal
+- Support `--verbose` flag for expanded output
 - Expand to see full failure logs, diagnosis, fix details
 
-**Test:** Client requests expanded view → receives full Verifier logs and Editor diagnosis. Default view shows only milestones.
+**Test:** Run `act run "task" --verbose` → terminal shows full Verifier logs and Editor diagnosis. Default run shows only milestones.
 
 ---
 
@@ -858,17 +964,57 @@ This document provides a step-by-step implementation plan for the AgentCommandTo
 - Counter logic (consecutive, total)
 - Schema validation
 
+```bash
+uv run pytest tests/unit/ -v
+```
+
 ### Integration Tests
 - Scout ↔ Editor communication
 - Editor ↔ Verifier communication
 - Full task flows
+
+```bash
+uv run pytest tests/integration/ -v
+```
 
 ### Container Tests
 - Read-only mount enforcement
 - Artifact directory writes
 - Container lifecycle (creation, destruction)
 
+```bash
+uv run pytest tests/container/ -v --docker
+```
+
 ### System Tests
 - Multi-task queue behavior
 - Real-time status updates
 - Stuck report persistence and reload
+
+```bash
+uv run pytest tests/system/ -v
+```
+
+---
+
+## Appendix: CLI Commands Reference
+
+### Core Commands
+
+| Command | Description |
+|---------|-------------|
+| `act run "task description"` | Submit and run a task |
+| `act run --dry-run "task"` | Preview changes without applying |
+| `act status` | Show current task status |
+| `act queue` | List queued tasks |
+| `act cancel` | Cancel running task |
+| `act cancel --id <n>` | Cancel queued task by position |
+
+### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--verbose`, `-v` | Show detailed output |
+| `--dry-run` | Preview mode (no writes) |
+| `--version` | Show version |
+| `--help` | Show help |
