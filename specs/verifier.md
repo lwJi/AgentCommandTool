@@ -281,6 +281,8 @@ ARTIFACT_DIR path configured via:
 
 ## Infrastructure Failure Handling
 
+The Verifier is one source of `INFRA_ERROR` status in the system. Scout query failures after retries also result in `INFRA_ERROR` (see [Editor Specification](editor.md#scout-infra_error)).
+
 ### Failure Types
 
 | Type | Examples | Status Returned |
@@ -290,7 +292,7 @@ ARTIFACT_DIR path configured via:
 
 ### Infrastructure Failure Behavior
 
-Infrastructure failures are **not retried** by the Verifier. On any infrastructure failure:
+Verifier infrastructure failures are **not retried**. On any infrastructure failure:
 
 1. Verifier immediately returns `INFRA_ERROR` status
 2. Task transitions to `INFRA_ERROR` state (not STUCK)

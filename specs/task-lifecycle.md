@@ -109,7 +109,7 @@ Cancelled pending tasks leave no trace — as if never submitted.
 | SUCCESS | Verifier returned PASS; summary generated |
 | CANCELLED | User cancelled mid-execution |
 | STUCK | Hard stop reached (12 verify loops); stuck report generated |
-| INFRA_ERROR | Verifier infrastructure failure (Docker unavailable, container crash, etc.); stuck report generated |
+| INFRA_ERROR | Infrastructure failure (Verifier: Docker unavailable, container crash; Scout: LLM API unavailable, network failure after retries); stuck report generated |
 
 ---
 
@@ -264,6 +264,10 @@ When 12 verify loops exhausted:
 
 ## Infrastructure Error Flow
 
+Infrastructure errors can originate from two sources:
+
+### Verifier Infrastructure Error
+
 When Verifier returns `INFRA_ERROR`:
 
 ```
@@ -275,13 +279,26 @@ When Verifier returns `INFRA_ERROR`:
 6. Next queued task starts (may also fail if infrastructure issue persists)
 ```
 
+### Scout Infrastructure Error
+
+When Scout queries fail after 3 retries:
+
+```
+1. Scout query fails (LLM API unavailable, network error, timeout)
+2. System retries with exponential backoff (up to 3 attempts)
+3. After 3 failures, Editor generates stuck report with infrastructure diagnosis
+4. Task enters INFRA_ERROR state
+5. Working tree remains dirty (may be clean if failure occurred before any changes)
+6. Next queued task starts (may also fail if infrastructure issue persists)
+```
+
 ### Difference from STUCK
 
 | Aspect | STUCK | INFRA_ERROR |
 |--------|-------|-------------|
-| Cause | 12 verify loops exhausted | Verifier infrastructure failure |
-| Retry attempted | Yes (up to 12 times) | No |
-| Likely resolution | Code/approach change | Infrastructure fix (restart Docker, free disk space) |
+| Cause | 12 verify loops exhausted | Infrastructure failure (Verifier or Scout) |
+| Retry attempted | Yes (up to 12 times) | Verifier: No; Scout: Yes (3 attempts with backoff) |
+| Likely resolution | Code/approach change | Infrastructure fix (restart Docker, check API keys, fix network) |
 
 ---
 

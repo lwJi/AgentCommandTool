@@ -89,8 +89,13 @@ On verification failure:
 | 3 consecutive failures | REPLAN | Autonomous re-strategize (new approach, optional Scout re-query, no human input) |
 | 12 total verify loops | Hard Stop | Generate stuck report with Editor-generated hypotheses |
 | INFRA_ERROR from Verifier | Immediate Stop | Generate stuck report with infrastructure diagnosis (see [Verifier Specification](verifier.md#infrastructure-failure-handling)) |
+| Scout query fails 3× | Immediate Stop | Generate stuck report with infrastructure diagnosis; transition to INFRA_ERROR state |
 
 ### INFRA_ERROR Handling
+
+Infrastructure errors can originate from Verifier or Scout failures.
+
+#### Verifier INFRA_ERROR
 
 When Verifier returns `INFRA_ERROR`:
 1. **No retry** — infrastructure failures bypass the debug loop entirely
@@ -99,6 +104,17 @@ When Verifier returns `INFRA_ERROR`:
 4. Working tree remains dirty for user inspection
 
 This differs from `FAIL` status, which enters the normal debug loop with REPLAN/hard-stop thresholds.
+
+#### Scout INFRA_ERROR
+
+When Scout queries fail after 3 retry attempts:
+1. Scout query fails (LLM API unavailable, network error, timeout)
+2. System retries with exponential backoff (up to 3 attempts total)
+3. After 3 failures, Editor generates stuck report with infrastructure diagnosis
+4. Task transitions to `INFRA_ERROR` state immediately
+5. Working tree state preserved (may be clean if failure occurred before implementation)
+
+Scout failures are treated as infrastructure issues because they indicate external system unavailability rather than code problems.
 
 ### Counter Definitions
 
@@ -210,6 +226,7 @@ Contains:
 | Success | Changes remain **dirty** — user reviews and commits manually |
 | Cancel | Partial changes **preserved** — no artifact created |
 | Hard Stop | Changes remain dirty; stuck report generated |
+| INFRA_ERROR | Changes remain dirty (or clean if failure occurred before implementation); stuck report generated |
 
 ---
 

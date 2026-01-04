@@ -172,7 +172,13 @@ Scout B receives:
 
 ## Error Handling
 
-Scout error handling follows [Invariant #9](blueprint.md#5-invariants): retry 3× with exponential backoff, then generate partial stuck report.
+Scout error handling follows [Invariant #9](blueprint.md#5-invariants): retry 3× with exponential backoff. After 3 failures, task transitions to `INFRA_ERROR` state with a stuck report (see [Editor Specification](editor.md#scout-infra_error)).
+
+### Timeout
+
+- Scout queries have configurable timeout (see [Configuration](configuration.md))
+- Timeout triggers retry flow
+- After 3 timeouts, task transitions to `INFRA_ERROR`
 
 ---
 
