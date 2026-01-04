@@ -62,11 +62,22 @@ When a second task is submitted while first is running:
 | Capability | Supported |
 |------------|-----------|
 | View queued tasks | ✅ Yes |
-| Cancel pending task | ❌ No |
+| Cancel pending task | ✅ Yes |
 | Reorder queue | ❌ No |
 | Priority override | ❌ No |
 
-Users can see what's queued but cannot modify the queue.
+### Pending Task Cancellation
+
+Users can cancel tasks in QUEUED state:
+
+| Aspect | Behavior |
+|--------|----------|
+| Removal | Task immediately removed from queue |
+| Artifacts | No artifacts created |
+| Queue shift | Remaining tasks shift up in position |
+| Running tasks | Not affected (use running task cancellation) |
+
+Cancelled pending tasks leave no trace — as if never submitted.
 
 ---
 

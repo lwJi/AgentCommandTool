@@ -102,10 +102,17 @@ When REPLAN triggers:
 1. Editor autonomously generates alternative strategy
 2. **Scope constraints remain immutable** — cannot violate user's original boundaries
 3. New context snapshot created (`context_###.md`)
-4. Continue with new approach
+4. **Optional Scout re-query** — Editor may request fresh analysis if warranted
+5. Continue with new approach
+
+### Scout Re-query Decision
+
+Editor has autonomy to re-query Scouts during REPLAN when:
+- **Re-query Scout A**: Failures suggest wrong files targeted, missed dependencies, or violated invariants
+- **Re-query Scout B**: Failures suggest misinterpreted build/test output or undetected environment issues
+- **Skip re-query**: Failures are clearly implementation logic errors with no codebase context gap
 
 REPLAN does NOT:
-- Re-query Scouts with new questions
 - Escalate to human for approval
 - Modify user-defined scope constraints
 
