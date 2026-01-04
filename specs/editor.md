@@ -102,6 +102,7 @@ The system tracks two separate counters:
 
 - **REPLAN trigger**: When `consecutive_failures` reaches 3
 - **Hard stop trigger**: When `total_verify_loops` reaches 12
+- **Precedence**: Hard stop takes precedence over REPLAN when both trigger simultaneously
 - **After REPLAN**: `consecutive_failures` resets to 0; `total_verify_loops` continues
 - **On full green**: Both counters reset to 0
 
@@ -116,11 +117,16 @@ Attempt 4: FAIL  → consecutive=1, total=4
 Attempt 5: FAIL  → consecutive=2, total=5
 Attempt 6: FAIL  → consecutive=3, total=6 → REPLAN triggered
                    consecutive resets to 0
-...
-Attempt 12: FAIL → total=12 → Hard stop
+Attempt 7: FAIL  → consecutive=1, total=7
+Attempt 8: FAIL  → consecutive=2, total=8
+Attempt 9: FAIL  → consecutive=3, total=9 → REPLAN triggered
+                   consecutive resets to 0
+Attempt 10: FAIL → consecutive=1, total=10
+Attempt 11: FAIL → consecutive=2, total=11
+Attempt 12: FAIL → consecutive=3, total=12 → Hard stop (precedence over REPLAN)
 ```
 
-This allows up to 4 REPLANs (at attempts 3, 6, 9, 12) before hard stop.
+This allows up to 3 REPLANs (at attempts 3, 6, 9) before hard stop. At attempt 12, hard stop takes precedence over REPLAN.
 
 ---
 
