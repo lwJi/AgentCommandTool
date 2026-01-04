@@ -29,6 +29,7 @@ Single flat configuration — no environment-specific overrides (dev/staging/pro
 # agent.yaml - Repository configuration
 
 verification:
+  container_image: node:20-slim  # Docker image for sandbox execution
   steps:
     - name: install
       command: npm ci --frozen-lockfile
@@ -49,6 +50,13 @@ timeouts:
   verification_step: 300000  # ms per step (5 min default)
   scout_query: 60000         # ms per scout query (1 min default)
 ```
+
+### Verification Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `container_image` | string | ✅ Yes | Docker image for Verifier sandbox execution |
+| `steps` | array | ✅ Yes | List of verification steps to run |
 
 ### Verification Steps
 
@@ -145,6 +153,7 @@ On task start, system validates:
 | Scenario | Behavior |
 |----------|----------|
 | No `agent.yaml` | Error: configuration required |
+| No `container_image` | Error: container image required for Verifier |
 | No verification steps | Error: at least one step required |
 | No LLM API key | Error: cannot proceed without model access |
 | Invalid YAML | Error with parse details |
@@ -157,6 +166,7 @@ On task start, system validates:
 
 ```yaml
 verification:
+  container_image: node:20-slim
   steps:
     - name: install
       command: npm ci --frozen-lockfile
@@ -172,6 +182,7 @@ verification:
 
 ```yaml
 verification:
+  container_image: python:3.12-slim
   steps:
     - name: install
       command: pip install -e ".[dev]"
@@ -187,6 +198,7 @@ verification:
 
 ```yaml
 verification:
+  container_image: golang:1.22
   steps:
     - name: build
       command: go build ./...
@@ -200,6 +212,7 @@ verification:
 
 ```yaml
 verification:
+  container_image: rust:1.75
   steps:
     - name: check
       command: cargo check
