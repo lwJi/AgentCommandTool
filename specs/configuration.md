@@ -120,7 +120,7 @@ Configuration priority:
 
 ### Schema Extensions
 
-- Scout A's JSON schema is **fixed and versioned**
+- Scout schemas (A and B) are **fixed and versioned**
 - No per-repository custom fields
 - No extensions mechanism
 
