@@ -245,11 +245,48 @@ ARTIFACT_DIR path configured via:
 
 ---
 
+## Infrastructure Failure Handling
+
+### Failure Types
+
+| Type | Examples | Status Returned |
+|------|----------|-----------------|
+| **Test/Build Failure** | Test assertion fails, compilation error, lint violation | `FAIL` |
+| **Infrastructure Failure** | Docker unavailable, container creation fails, image pull fails, resource exhaustion | `INFRA_ERROR` |
+
+### Infrastructure Failure Behavior
+
+Infrastructure failures are **not retried** by the Verifier. On any infrastructure failure:
+
+1. Verifier immediately returns `INFRA_ERROR` status
+2. Task transitions to `INFRA_ERROR` state (not STUCK)
+3. Partial logs captured if available
+4. Stuck report generated with infrastructure diagnosis
+
+### Rationale
+
+Infrastructure failures typically require human intervention (Docker restart, disk space cleanup, network fixes). Retrying would delay feedback without resolving the underlying issue.
+
+### Response Structure (Infrastructure Failure)
+
+```json
+{
+  "status": "INFRA_ERROR",
+  "error_type": "container_creation | image_pull | docker_unavailable | resource_exhaustion | unknown",
+  "error_message": "string",
+  "run_id": "string | null",
+  "partial_logs": "string | null"
+}
+```
+
+---
+
 ## Integration with Editor
 
 1. Editor triggers Verifier (no parameters — Verifier reads current working tree)
 2. Verifier executes pipeline in sandboxed container
 3. Verifier returns structured response
 4. Editor reads `status` for pass/fail gate
-5. On failure, Editor accesses full logs via `artifact_paths`
-6. Summary includes `run_id` for audit trail
+5. On `INFRA_ERROR`, task immediately transitions to INFRA_ERROR state with stuck report
+6. On `FAIL`, Editor accesses full logs via `artifact_paths` and continues debug loop
+7. Summary includes `run_id` for audit trail

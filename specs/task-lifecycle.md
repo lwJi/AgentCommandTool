@@ -93,11 +93,11 @@ Cancelled pending tasks leave no trace — as if never submitted.
 │   RUNNING   │ (Editor active)
 └──────┬──────┘
        │
-       ├──────────────┬────────────────┐
-       ▼              ▼                ▼
-┌───────────┐  ┌────────────┐  ┌────────────┐
-│  SUCCESS  │  │  CANCELLED │  │   STUCK    │
-└───────────┘  └────────────┘  └────────────┘
+       ├──────────────┬────────────────┬─────────────────┐
+       ▼              ▼                ▼                 ▼
+┌───────────┐  ┌────────────┐  ┌────────────┐  ┌──────────────┐
+│  SUCCESS  │  │  CANCELLED │  │   STUCK    │  │ INFRA_ERROR  │
+└───────────┘  └────────────┘  └────────────┘  └──────────────┘
 ```
 
 ### State Definitions
@@ -109,6 +109,7 @@ Cancelled pending tasks leave no trace — as if never submitted.
 | SUCCESS | Verifier returned PASS; summary generated |
 | CANCELLED | User cancelled mid-execution |
 | STUCK | Hard stop reached (12 verify loops); stuck report generated |
+| INFRA_ERROR | Verifier infrastructure failure (Docker unavailable, container crash, etc.); stuck report generated |
 
 ---
 
@@ -258,6 +259,29 @@ When 12 verify loops exhausted:
 4. Stuck report persisted for future retry
 5. Next queued task starts
 ```
+
+---
+
+## Infrastructure Error Flow
+
+When Verifier returns `INFRA_ERROR`:
+
+```
+1. Verifier detects infrastructure failure (Docker unavailable, container crash, etc.)
+2. Verifier returns INFRA_ERROR status immediately (no retry)
+3. Editor generates stuck report with infrastructure diagnosis
+4. Task enters INFRA_ERROR state
+5. Working tree remains dirty
+6. Next queued task starts (may also fail if infrastructure issue persists)
+```
+
+### Difference from STUCK
+
+| Aspect | STUCK | INFRA_ERROR |
+|--------|-------|-------------|
+| Cause | 12 verify loops exhausted | Verifier infrastructure failure |
+| Retry attempted | Yes (up to 12 times) | No |
+| Likely resolution | Code/approach change | Infrastructure fix (restart Docker, free disk space) |
 
 ---
 
