@@ -88,6 +88,17 @@ On verification failure:
 |-----------|---------|--------|
 | 3 consecutive failures | REPLAN | Autonomous re-strategize (new approach, optional Scout re-query, no human input) |
 | 12 total verify loops | Hard Stop | Generate stuck report with Editor-generated hypotheses |
+| INFRA_ERROR from Verifier | Immediate Stop | Generate stuck report with infrastructure diagnosis (see [Verifier Specification](verifier.md#infrastructure-failure-handling)) |
+
+### INFRA_ERROR Handling
+
+When Verifier returns `INFRA_ERROR`:
+1. **No retry** — infrastructure failures bypass the debug loop entirely
+2. Editor generates stuck report with infrastructure diagnosis
+3. Task transitions to `INFRA_ERROR` state immediately
+4. Working tree remains dirty for user inspection
+
+This differs from `FAIL` status, which enters the normal debug loop with REPLAN/hard-stop thresholds.
 
 ### Counter Definitions
 

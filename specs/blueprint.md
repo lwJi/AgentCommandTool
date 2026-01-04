@@ -58,7 +58,7 @@ This architecture defines a **pull-based, editor-centric coding agent** optimize
 
 ### Editor → Verifier
 - **Input:** Trigger to run verification
-- **Output:** `{ status: PASS|FAIL, tail_log: string (≤200 lines), run_id: string, artifact_paths: string[] }`
+- **Output:** Unified response with `status: PASS|FAIL|INFRA_ERROR` (see [Verifier Specification](verifier.md#output-contract) for full schema)
 
 ### Verifier Sandbox Contract
 | Aspect | Rule |
@@ -86,6 +86,8 @@ This architecture defines a **pull-based, editor-centric coding agent** optimize
 | 6 | **Hard stop at 12 total verify loops** | Prevents infinite thrash; produces stuck report with hypotheses + artifact refs. Total counter only resets on green. Hard stop takes precedence when both triggers fire simultaneously. |
 | 7 | **Diffs must be minimal and pattern-consistent** | Maintainability over cleverness |
 | 8 | **Artifact retention: 20 runs or 14 days; stuck-report artifacts retained until resolved** | Auditability without unbounded storage |
+| 9 | **Scout queries retry 3× with exponential backoff; after 3 failures generate partial stuck report** | Resilience against transient failures while preventing infinite retry loops |
+| 10 | **INFRA_ERROR triggers immediate task termination with stuck report** | Infrastructure failures require human intervention; retrying wastes time |
 
 ---
 
