@@ -241,7 +241,7 @@ When user decides to apply:
 7. Continue until green OR 12 total loops reached
 ```
 
-Up to 4 REPLANs possible (at loops 3, 6, 9, 12) before hard stop.
+Up to 3 REPLANs possible (at loops 3, 6, 9) before hard stop. At loop 12, hard stop takes precedence over REPLAN.
 
 ---
 

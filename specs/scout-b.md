@@ -42,12 +42,13 @@ Scout B receives focused questions from the Editor, such as:
 
 ## Output: Report Payload
 
-Scout B returns structured analysis. Unlike Scout A's strict JSON schema, Scout B reports are more diagnostic in nature.
+Scout B returns structured analysis with a versioned schema consistent with Scout A.
 
 ### Report Structure
 
 ```json
 {
+  "schema_version": "1",
   "build": {
     "detected_system": "npm | yarn | pnpm | make | cargo | go | gradle | maven | custom",
     "commands": {
@@ -84,6 +85,15 @@ Scout B returns structured analysis. Unlike Scout A's strict JSON schema, Scout 
   ]
 }
 ```
+
+---
+
+## Schema Versioning
+
+- Schema is **fixed and versioned** (consistent with Scout A)
+- Breaking changes require **major version bump**
+- Editor validates payload against expected schema version
+- No per-repository extensions or custom fields
 
 ---
 
