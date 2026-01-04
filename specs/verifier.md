@@ -111,14 +111,38 @@ SNAPSHOT_DIR=/artifacts/snapshots
 
 ## Output Contract
 
-### Response Structure
+### Response Structure (Unified)
+
+All Verifier responses use this unified schema. The `status` field determines which optional fields are present.
 
 ```json
 {
-  "status": "PASS | FAIL",
-  "run_id": "string (unique identifier)",
-  "tail_log": "string (≤200 lines)",
+  "status": "PASS | FAIL | INFRA_ERROR",
+  "run_id": "string | null",
+  "tail_log": "string | null",
   "artifact_paths": ["string"],
+  "manifest": { ... },
+
+  "error_type": "string | null",
+  "error_message": "string | null"
+}
+```
+
+### Field Presence by Status
+
+| Field | PASS | FAIL | INFRA_ERROR |
+|-------|------|------|-------------|
+| `run_id` | ✅ Required | ✅ Required | ⚪ Optional (null if container never started) |
+| `tail_log` | ✅ Required | ✅ Required | ⚪ Optional (partial logs if available) |
+| `artifact_paths` | ✅ Required | ✅ Required | ⚪ Optional (empty if no artifacts) |
+| `manifest` | ✅ Required | ✅ Required | ⚪ Optional (null if container never started) |
+| `error_type` | ❌ Absent | ❌ Absent | ✅ Required |
+| `error_message` | ❌ Absent | ❌ Absent | ✅ Required |
+
+### Manifest Structure
+
+```json
+{
   "manifest": {
     "timestamp_start": "ISO8601",
     "timestamp_end": "ISO8601",
@@ -139,6 +163,16 @@ SNAPSHOT_DIR=/artifacts/snapshots
   }
 }
 ```
+
+### Error Types (INFRA_ERROR only)
+
+| error_type | Description |
+|------------|-------------|
+| `docker_unavailable` | Docker daemon not running or accessible |
+| `container_creation` | Failed to create container |
+| `image_pull` | Failed to pull container image |
+| `resource_exhaustion` | Out of disk, memory, or other resources |
+| `unknown` | Unclassified infrastructure failure |
 
 ### Tail Log
 
@@ -267,17 +301,7 @@ Infrastructure failures are **not retried** by the Verifier. On any infrastructu
 
 Infrastructure failures typically require human intervention (Docker restart, disk space cleanup, network fixes). Retrying would delay feedback without resolving the underlying issue.
 
-### Response Structure (Infrastructure Failure)
-
-```json
-{
-  "status": "INFRA_ERROR",
-  "error_type": "container_creation | image_pull | docker_unavailable | resource_exhaustion | unknown",
-  "error_message": "string",
-  "run_id": "string | null",
-  "partial_logs": "string | null"
-}
-```
+Response structure for `INFRA_ERROR` follows the unified schema defined in [Output Contract](#output-contract).
 
 ---
 

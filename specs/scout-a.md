@@ -167,16 +167,11 @@ The following are **excluded from Scout A analysis**:
 
 ## Error Handling
 
-### Retry Behavior
-
-If Scout A becomes unresponsive:
-1. Editor retries with **exponential backoff**
-2. Maximum **3 retry attempts**
-3. After 3 failures: generate partial stuck report
+Scout error handling follows [Invariant #9](blueprint.md#5-invariants): retry 3× with exponential backoff, then generate partial stuck report.
 
 ### Timeout
 
-- Scout queries have configurable timeout
+- Scout queries have configurable timeout (see [Configuration](configuration.md))
 - Timeout triggers retry flow
 
 ---
