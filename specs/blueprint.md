@@ -1,149 +1,97 @@
-# blueprint.md — Iterative Refinement Architecture
+# Coding Agent Workflow — Canonical Architectural Reference
 
-## 0) Objective
-Produce **high-quality, criteria-verified outputs** from ambiguous goals via a **closed-loop control architecture** that:
-- separates *intent* (Manager) from *production* (Specialists) from *judgment* (Verifier),
-- prevents drift and repetition,
-- converges reliably within explicit budgets.
+## 1. System Overview
+
+This architecture defines a **pull-based, editor-centric coding agent** optimized for **correctness** and **maintainability**. A single Editor role holds exclusive write authority over the repository, while read-only Scouts provide on-demand analysis and a sandboxed Verifier enforces a hard quality gate. The design prevents agent thrash through strict role boundaries, incremental change slices, and explicit iteration controls (REPLAN at 3 failures, hard stop at 12).
 
 ---
 
-## 1) Roles
+## 2. Component Inventory
 
-| Role | Responsibility | May Write | May Read |
-|------|----------------|-----------|----------|
-| **Manager** | Owns task definition, decomposes work, selects strategy, decides stop/escalate/accept | Task Spec, Plan, Decisions Log, Delta Summary | All state |
-| **Specialist** | Generates candidate artifacts for assigned packets | Candidates only | Task Spec, assigned Packets, own Verification Reports |
-| **Verifier** | Evaluates candidates against criteria; issues diagnostic reports | Verification Reports only | Task Spec, Candidate under review, attached evidence, prior reports (for consistency checks only) |
-
-**Communication constraint:** Manager-to-Verifier communication must go through Task Spec or candidate evidence — never via Decisions Log.
-
----
-
-## 2) State
-
-The system maintains a **Working Set** (active state) and an **Archive** (reference-only history).
-
-### Working Set (bounded, used for decisions)
-
-| Section | Contents |
-|---------|----------|
-| **Task Spec** | Objective (one sentence), Constraints (must/must-not), Acceptance Criteria (versioned, with criterion IDs C1, C2, …), Risk notes |
-| **Plan** | Packet ID, local objective, inputs/outputs, dependencies, **owned criterion IDs** |
-| **Criteria Map** | For each criterion ID: `owned-by: [packets]` OR `integration-level` OR `waived: reason` |
-| **Active Candidates** | Candidate ID → Packet ID, assumptions, provenance |
-| **Latest Reports** | Verification reports for active candidates |
-| **Delta Summary** | What changed this iteration, remaining unmet criteria |
-| **Decisions Log** | Iteration decisions with rationale (Manager-only) |
-
-### Archive
-Older candidates, reports, and decision details retained by ID. Not used for reasoning unless Manager promotes them back to Working Set.
-
-**Invariant:** Working Set must fit context budget. Archive is invisible to roles unless promoted.
+| Component | Responsibility | Write Access |
+|-----------|----------------|--------------|
+| **Editor** | Single source of truth for all repo modifications. Orchestrates workflow, records scout reports, implements changes, triggers verification, produces final summaries. | ✅ Repo + `agent/` artifacts |
+| **Scout A** (Codebase Mapper) | Locates files, patterns, APIs, invariants. Produces actionable guidance on *where/how* to change. | ❌ Read-only |
+| **Scout B** (Build/Test Detective) | Determines build/test commands, interprets failures, flags flakiness and environment issues. | ❌ Read-only |
+| **Verifier** | Executes build + unit tests in a sandbox. Gates "done" on green status. Emits truncated logs + artifact references. | ❌ Repo read-only; writes only to external `ARTIFACT_DIR` |
 
 ---
 
-## 3) Criteria Rules
-
-1. Acceptance criteria have stable **criterion IDs** (C1, C2, …).
-2. Packets must not define local criteria independent of these IDs.
-3. Every criterion ID must appear in the Criteria Map as: owned by ≥1 packet, OR integration-level, OR waived.
-4. Criteria changes require version increment and logged rationale.
-
----
-
-## 4) Lifecycle
-
+## 3. Data Flow
 ```
-┌─────────────────────────────────────────────────────────┐
-│  1. FRAME     Manager sets Task Spec + budgets          │
-│  2. DECOMPOSE Manager creates packets, assigns criteria │
-│  3. PRODUCE   Specialists generate candidates           │
-│  4. VERIFY    Verifier evaluates per-packet criteria    │
-│  5. DECIDE    Manager chooses: repair/re-plan/accept    │
-│  6. COMPACT   Manager updates Working Set, archives old │
-│  7. ITERATE   Loop until pass or stop condition         │
-│  8. FINALIZE  Verify integration criteria, output result│
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                      EDITOR (orchestrator)                  │
+│  - Requests scout analysis (pull-based)                     │
+│  - Records scout payloads → agent/context_###.md            │
+│  - Implements smallest safe slice                           │
+│  - Triggers Verifier                                        │
+└──────────┬────────────────────────────────┬─────────────────┘
+           │ question                       │ trigger
+           ▼                                ▼
+   ┌───────────────┐                ┌───────────────┐
+   │   SCOUTS A/B  │                │   VERIFIER    │
+   │  (read-only)  │                │  (sandboxed)  │
+   └───────┬───────┘                └───────┬───────┘
+           │ report payload                 │ PASS/FAIL + last 200 lines
+           ▼                                │ + artifact reference (run_id)
+     Editor records                         ▼
+     to context file               Editor consumes result
 ```
 
-### Stop Conditions (define before iteration)
-- Max iterations / time / cost budget
-- Maximum tolerated uncertainty
-- Escalation threshold (e.g., same failure N times)
-- Accept-with-waiver rules
-
-### Exit Statuses
-`PASS` | `BUDGET_EXHAUSTED` | `ESCALATED` | `UNCERTAINTY_LIMIT` | `ITERATION_LIMIT`
-
-On non-pass exit: output best candidate + unmet criteria + verification report.
+**Numbered Flow:**
+1. Editor defines success criteria (behavior change, acceptance criteria, non-goals)
+2. Editor pulls Scouts with targeted questions → Scouts return report payloads
+3. Editor records payloads to `agent/context_###.md`, updates `agent/context_latest.md`
+4. Editor implements minimal diff following repo conventions
+5. Editor triggers Verifier → Verifier runs build+tests in read-only sandbox
+6. Verifier returns status; on failure, Editor enters tight debug loop (localize → fix → re-verify)
+7. On green: Editor produces summary (what, why, how verified, `run_id`)
 
 ---
 
-## 5) Verification Contract
+## 4. Interaction Contracts
 
-### Report Structure
-| Field | Description |
-|-------|-------------|
-| Outcome | `PASS` / `FAIL` / `PARTIAL` / `UNKNOWN` |
-| Criteria coverage | Pass/fail/unknown per criterion ID |
-| Failure labels | From taxonomy below |
-| Repair targets | What must change (diagnostic, not solution) |
-| Confidence | How certain, how costly if wrong |
+### Scout → Editor
+- **Input:** Targeted question from Editor
+- **Output:** Report payload (message/structured output)
+- **Constraint:** Scouts never write; Editor records all persistent artifacts
 
-### Failure Taxonomy
-1. **Coverage** — missed criterion
-2. **Violation** — did something disallowed
-3. **Inconsistency** — self-contradiction
-4. **Unsupported** — assertion without evidence
-5. **Ambiguity** — cannot verify (return UNKNOWN)
-6. **Scope** — answered wrong question
-7. **Overconfidence** — uncertainty not acknowledged
+### Editor → Verifier
+- **Input:** Trigger to run verification
+- **Output:** `{ status: PASS|FAIL, tail_log: string (≤200 lines), run_id: string, artifact_paths: string[] }`
 
-### Verifier Boundaries
-The Verifier must NOT:
-- Introduce or modify criteria
-- Reframe objective or constraints
-- Propose solutions (repair targets are diagnostic only)
-- Negotiate waivers
+### Verifier Sandbox Contract
+| Aspect | Rule |
+|--------|------|
+| Repo mount | **Read-only** (fail-fast on write attempts) |
+| Writable root | `ARTIFACT_DIR/` only: `logs/`, `build/`, `cache/`, `tmp/` |
+| Run manifest | `run_id`, timestamps, commit SHA, commands, exit codes, platform info |
+| Test mode | No-update / no-snapshot-rewrite flags required |
 
-Every judgment must cite criterion IDs and evidence. If unverifiable → return `UNKNOWN`.
+### Scout Artifact Schema
+- `agent/context_latest.md` → pointer to newest snapshot
+- `agent/context_###.md` → versioned snapshots containing: repo map, target files, APIs, constraints, prior art, verification tips, hypotheses
 
 ---
 
-## 6) Iteration Strategies
+## 5. Invariants
 
-| Strategy | When to Use |
-|----------|-------------|
-| **Targeted Repair** | Failures are local and actionable |
-| **Re-plan** | Wrong assumptions or broken packet boundaries |
-| **Parallel Regeneration** | Break correlated errors across candidates |
-| **Escalation** | Verifier is inconsistent or blind |
-
-### Anti-Loop Requirements
-- Repairs must state what changed and why it resolves the failure.
-- Track repeated failures; trigger re-plan or parallel regeneration automatically.
-- No vague "try again" — require failure taxonomy + repair targets.
-
----
-
-## 7) Failure Modes
-
-| Mode | Cause | Guardrail |
-|------|-------|-----------|
-| **Hallucination loop** | Vague feedback + correlated blind spots | Require failure taxonomy, track repeats, mandate deltas |
-| **Goalpost drift** | Silent criteria changes | Version criteria, log changes |
-| **Reward hacking** | Verifier becomes predictable | Enforce criteria coverage, prefer hard-to-game checks |
-| **Verifier inconsistency** | Shifting thresholds | Anchor to stable criteria, record justifications |
+| # | Rule | Rationale |
+|---|------|-----------|
+| 1 | **Only Editor writes to repo/working tree** | Single edit authority prevents conflicts and audit confusion |
+| 2 | **Scouts are strictly read-only** | Separation of analysis from mutation |
+| 3 | **Verifier repo mount is read-only** | Tests cannot accidentally modify source; all artifacts externalized |
+| 4 | **Green build + unit tests required before "done"** | Correctness is a hard gate, not advisory |
+| 5 | **REPLAN after 3 consecutive verify failures** | Forces strategy change, not scope creep |
+| 6 | **Hard stop at 12 verify loops** | Prevents infinite thrash; produces stuck report with hypotheses + artifact refs |
+| 7 | **Diffs must be minimal and pattern-consistent** | Maintainability over cleverness |
+| 8 | **Artifact retention: 20 runs or 14 days; stuck-report artifacts retained until resolved** | Auditability without unbounded storage |
 
 ---
 
-## 8) Definition of Done
+## Quick Reference: Definition of Done
 
-A result is done when:
-- Final candidate **passes** all criteria (or waivers recorded), OR
-- System exits with explicit status + best candidate + unmet criteria documented
-
-In both cases:
-- Verification reports attached
-- Decision log explains why this output was selected
+✅ Verifier returns `PASS`  
+✅ Diff is minimal, follows repo conventions  
+✅ New/changed behavior has appropriate tests  
+✅ Summary documents: what changed, why, how verified (`run_id` included)
