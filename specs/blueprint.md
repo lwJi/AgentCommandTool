@@ -82,7 +82,7 @@ This architecture defines a **pull-based, editor-centric coding agent** optimize
 | 2 | **Scouts are strictly read-only** | Separation of analysis from mutation |
 | 3 | **Verifier repo mount is read-only** | Tests cannot accidentally modify source; all artifacts externalized |
 | 4 | **Green build + unit tests required before "done"** | Correctness is a hard gate, not advisory |
-| 5 | **REPLAN after 3 consecutive verify failures** | Forces strategy change, not scope creep |
+| 5 | **REPLAN after 3 consecutive verify failures** | Forces strategy change, not scope creep; Editor may optionally re-query Scouts if failures suggest stale analysis |
 | 6 | **Hard stop at 12 verify loops** | Prevents infinite thrash; produces stuck report with hypotheses + artifact refs |
 | 7 | **Diffs must be minimal and pattern-consistent** | Maintainability over cleverness |
 | 8 | **Artifact retention: 20 runs or 14 days; stuck-report artifacts retained until resolved** | Auditability without unbounded storage |
