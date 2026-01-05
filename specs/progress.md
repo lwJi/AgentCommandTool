@@ -792,3 +792,204 @@ tests/unit/test_editor_editor.py (36 tests)
 Proceed to **Phase 5: Integration — CLI Entry Points** as defined in `specs/implementation-plan.md`.
 
 ---
+
+## Phase 5: Task Lifecycle — Queue, State Machine, and Status Display (Completed)
+
+**Date:** 2026-01-05
+
+### What was implemented
+
+#### 5.1 Task State Machine (`src/act/task/state.py`)
+
+- `TaskState` enum: `QUEUED`, `RUNNING`, `SUCCESS`, `CANCELLED`, `STUCK`, `INFRA_ERROR`
+- `TERMINAL_STATES` - Frozen set of terminal states (SUCCESS, CANCELLED, STUCK, INFRA_ERROR)
+- `Task` dataclass:
+  - `id` - Unique task identifier (auto-generated)
+  - `description` - Free-form task description
+  - `state` - Current TaskState
+  - `created_at`, `started_at`, `completed_at` - UTC timestamps
+  - `dry_run`, `verbose` - Execution mode flags
+  - `run_ids` - List of verification run IDs
+  - `current_attempt` - Current verification attempt (1-based)
+  - `summary`, `error_message` - Completion details
+  - `is_terminal()`, `can_cancel()`, `to_dict()` - Utility methods
+- Functions:
+  - `generate_task_id()` - Format: `task_{YYYYMMDD}_{HHMMSS}_{random6chars}`
+  - `create_task()` - Factory function for new tasks
+  - `is_terminal_state()` - Check if state is terminal
+
+#### 5.2 Task Queue (`src/act/task/queue.py`)
+
+- `QueuedTask` dataclass: `task`, `position`, `queued_at`
+- `TaskQueue` class (thread-safe):
+  - `add()` - Add task to queue, returns position
+  - `dequeue()` - Remove and return next task (FIFO)
+  - `get_current()` - Get currently running task
+  - `set_current()` - Set current task
+  - `mark_completed()` - Move task to completed list
+  - `list_queued()` - List all queued tasks with positions
+  - `get_completed()` - Get completed tasks (with limit)
+  - `remove_by_position()` - Cancel queued task by position
+  - `remove_by_id()` - Cancel queued task by ID
+  - `clear_completed()` - Clear completed task history
+  - `has_running_task()`, `is_empty()`, `__len__()` - Status methods
+- Global singleton via `get_task_queue()` and `reset_task_queue()`
+- Thread safety via `threading.Lock`
+
+#### 5.3 Status Display (`src/act/task/display.py`)
+
+- `Milestone` enum with 18 milestones:
+  - Initial: `TASK_QUEUED`, `TASK_STARTED`
+  - Analysis: `ANALYZING_CODEBASE`, `QUERYING_SCOUT_A`, `QUERYING_SCOUT_B`, `ANALYSIS_COMPLETE`
+  - Implementation: `IMPLEMENTING_CHANGES`, `CHANGES_APPLIED`
+  - Verification: `RUNNING_VERIFICATION`, `VERIFICATION_PASSED`, `VERIFICATION_FAILED`
+  - Debug: `REPLANNING`, `REPLAN_COMPLETE`
+  - Completion: `TASK_SUCCESS`, `TASK_STUCK`, `TASK_CANCELLED`, `TASK_INFRA_ERROR`
+  - Dry-run: `DRY_RUN_COMPLETE`, `APPLYING_DRY_RUN`
+- `StatusMessage` dataclass: `milestone`, `message`, `timestamp`, `detail`
+- `STATE_STYLES` - Rich Style mapping for task states
+- `MILESTONE_ICONS` - Emoji icons for each milestone
+- `StatusDisplay` class:
+  - `set_task()` - Set current task for display
+  - `emit()` - Emit a milestone with optional detail
+  - `emit_attempt()` - Emit attempt counter (e.g., "Attempt 3/12")
+  - `add_callback()`, `remove_callback()` - Status update callbacks
+  - `start_spinner()`, `update_spinner()`, `stop_spinner()` - Rich spinner control
+  - `show_task_status()` - Display task status panel
+  - `show_queue()` - Display queue table
+  - `show_success()` - Display success panel
+  - `show_stuck()` - Display stuck report panel
+  - `show_infra_error()` - Display infrastructure error panel
+  - `show_dry_run_diff()` - Display dry-run diff panel
+  - `show_verbose_log()` - Display verbose log (only in verbose mode)
+  - `clear()` - Reset display state
+- Factory function: `create_status_display()`
+
+#### 5.4 Task Runner (`src/act/task/runner.py`)
+
+- `TaskRunnerError` - Base exception for runner errors
+- `TaskCancelledError` - Raised when task is cancelled
+- `EditorProtocol` - Protocol for Editor integration (dependency injection)
+- `VerifierProtocol` - Protocol for Verifier integration
+- `TaskResult` dataclass: `task`, `success`, `summary`, `stuck_report_path`, `error_message`
+- `TaskRunner` class:
+  - `submit()` - Submit task, starts immediately or queues
+  - `cancel_current()` - Cancel running task via Event
+  - `cancel_queued()` - Cancel queued task by position
+  - `cancel_by_id()` - Cancel task by ID
+  - `get_status()` - Get current runner status
+  - `wait_for_completion()` - Block until current task completes
+  - `add_completion_callback()` - Add callback for task completion
+  - Internal methods:
+    - `_start_next_task()` - Dequeue and start next task
+    - `_execute_task()` - Execute task in thread
+    - `_run_task_workflow()` - Main workflow with phases
+    - `_finalize_task()` - Finalize and start next
+- Factory function: `create_task_runner()`
+- Thread-based execution with cancellation via `threading.Event`
+- Workflow phases: Analysis → Implementation → Verification (with dry-run bypass)
+
+#### 5.5 Retry Context (`src/act/task/retry.py`)
+
+- `RetryContextError` - Error loading retry context
+- `RetryContext` dataclass:
+  - `task_description` - Original task description
+  - `constraints` - List of constraints
+  - `hypotheses` - List of (title, description, investigation) tuples
+  - `artifact_run_ids` - Run IDs from previous attempts
+  - `files_modified` - Files modified in previous attempts
+  - `is_infra_error` - Whether stuck was due to infrastructure
+  - `infra_error_source` - Source of infrastructure error
+- Functions:
+  - `load_retry_context()` - Load from existing stuck report
+  - `get_retry_summary()` - Human-readable summary for display
+  - `should_show_retry_context()` - Check if stuck report exists
+  - `clear_retry_context()` - Remove stuck report after successful retry
+  - `extract_run_ids_from_report()` - Extract run IDs from markdown
+  - `get_artifact_paths_for_retry()` - Get artifact directory paths
+- Parses stuck report markdown with regex extraction for:
+  - Task description, constraints, hypotheses
+  - Files modified, run IDs, infrastructure error info
+
+#### 5.6 CLI Integration (`src/act/cli.py`)
+
+- Updated CLI with full task lifecycle integration:
+  - `act run <task>` - Submit and run task
+    - `--dry-run` flag for preview mode
+    - `-v/--verbose` flag for detailed output
+    - Environment validation before execution
+    - Retry context display if stuck report exists
+    - Keyboard interrupt handling for cancellation
+  - `act status` - Show current task status panel
+  - `act queue` - List queued tasks with table display
+  - `act cancel` - Cancel running or queued task
+    - `--id N` option to cancel by queue position
+  - `act history` - Show or clear task history
+    - `--clear` flag to remove completed tasks
+- Helper functions:
+  - `get_repo_path()` - Get current working directory
+  - `validate_environment()` - Validate startup requirements
+
+#### 5.7 Public API (`src/act/task/__init__.py`)
+
+Exports all task components:
+- State: `Task`, `TaskState`, `TERMINAL_STATES`, `is_terminal_state`, `create_task`, `generate_task_id`
+- Queue: `TaskQueue`, `QueuedTask`, `get_task_queue`, `reset_task_queue`
+- Display: `StatusDisplay`, `StatusMessage`, `Milestone`, `STATE_STYLES`, `MILESTONE_ICONS`, `create_status_display`
+- Runner: `TaskRunner`, `TaskResult`, `TaskRunnerError`, `TaskCancelledError`, `EditorProtocol`, `VerifierProtocol`, `create_task_runner`
+- Retry: `RetryContext`, `RetryContextError`, `load_retry_context`, `get_retry_summary`, `should_show_retry_context`, `clear_retry_context`, `extract_run_ids_from_report`, `get_artifact_paths_for_retry`
+
+### Validation results
+
+All validation criteria from the implementation plan pass:
+
+| Test | Command | Result |
+|------|---------|--------|
+| Unit tests | `uv run pytest tests/unit/ -v` | 786 passed |
+| Linting | `uv run ruff check src/` | All checks passed |
+| Type checking | `uv run mypy src/act/task/ src/act/cli.py` | Success: no issues found |
+| CLI help | `uv run act --help` | Shows all commands: cancel, history, queue, run, status |
+
+### Files created
+
+```
+src/act/task/state.py
+src/act/task/queue.py
+src/act/task/display.py
+src/act/task/runner.py
+src/act/task/retry.py
+src/act/task/__init__.py (updated with exports)
+src/act/cli.py (updated with full integration)
+tests/unit/test_task_state.py (34 tests)
+tests/unit/test_task_queue.py (34 tests)
+tests/unit/test_task_display.py (38 tests)
+tests/unit/test_task_runner.py (26 tests)
+tests/unit/test_task_retry.py (20 tests)
+```
+
+### Dependencies
+
+- Uses `rich` package for TUI components (already in dependencies from Phase 0)
+- Uses `click` package for CLI (already in dependencies from Phase 0)
+- Integrates with `act.config` module for validation and configuration
+- Integrates with `act.artifacts` module for agent directory and context
+- Integrates with `act.editor` module for stuck report reading
+
+### Design decisions
+
+1. **FIFO queue with sequential execution** - One task runs at a time; no concurrency
+2. **Thread-based task execution** - Uses `threading.Thread` for non-blocking CLI
+3. **Cancellation via Event** - Uses `threading.Event` for cooperative cancellation
+4. **Protocol-based dependency injection** - Editor/Verifier protocols for testability
+5. **Global singleton queue** - Simple state management for CLI use case
+6. **Thread-safe queue operations** - All queue methods protected by `threading.Lock`
+7. **Markdown parsing for retry context** - Regex-based extraction from stuck reports
+8. **Milestone-based status updates** - Discrete events rather than continuous progress
+9. **Rich TUI for user feedback** - Spinners, panels, tables for professional output
+10. **Exit codes follow conventions** - 0 for success, 1 for failure, 130 for interrupt
+
+### Next steps
+
+Proceed to **Phase 6: Integration Testing** as defined in `specs/implementation-plan.md`.
+
+---
