@@ -205,3 +205,167 @@ tests/unit/test_artifacts_context.py (25 tests)
 Proceed to **Phase 2: Verifier — Docker Sandbox Execution** as defined in `specs/implementation-plan.md`.
 
 ---
+
+## Phase 2: Verifier — Sandboxed Execution (Completed)
+
+**Date:** 2026-01-05
+
+### What was implemented
+
+#### 2.1 Exception Hierarchy (`src/act/verifier/exceptions.py`)
+
+- Custom exception classes for Verifier errors
+- `VerifierError` - Base exception for all Verifier errors
+- `ContainerError(VerifierError)` - Docker container-related errors
+- `PipelineError(VerifierError)` - Pipeline execution errors
+- `LogError(VerifierError)` - Log file operation errors
+- `InfraErrorType` enum with values: `DOCKER_UNAVAILABLE`, `CONTAINER_CREATION`, `IMAGE_PULL`, `RESOURCE_EXHAUSTION`, `UNKNOWN`
+
+#### 2.2 Response Contract (`src/act/verifier/response.py`)
+
+- `VerifierStatus` enum: `PASS`, `FAIL`, `INFRA_ERROR`
+- `VerifierResponse` dataclass with:
+  - `status` - Required VerifierStatus
+  - `run_id` - Optional run identifier
+  - `tail_log` - Optional last 200 lines of combined log
+  - `artifact_paths` - List of artifact file paths
+  - `manifest` - Optional Manifest from verification run
+  - `error_type` - Optional InfraErrorType (for INFRA_ERROR only)
+  - `error_message` - Optional error description (for INFRA_ERROR only)
+- `to_dict()` method for JSON serialization (omits null optional fields)
+- Factory functions:
+  - `create_pass_response()` - Creates PASS response with all fields
+  - `create_fail_response()` - Creates FAIL response with all fields
+  - `create_infra_error_response()` - Creates INFRA_ERROR with error details
+
+#### 2.3 Log Utilities (`src/act/verifier/logs.py`)
+
+- `TAIL_LOG_LINES = 200` - Default lines for tail extraction
+- Directory creation functions:
+  - `create_logs_dir()` - Creates `logs/` subdirectory
+  - `create_tmp_dir()` - Creates `tmp/` subdirectory
+  - `create_db_dir()` - Creates `db/` subdirectory
+- Log file utilities:
+  - `get_step_log_filename()` - Generates `step-01-install.log` format
+  - `write_step_log()` - Writes individual step log files
+  - `append_combined_log()` - Appends to combined.log
+  - `extract_tail_log()` - Extracts last N lines (default 200)
+  - `list_artifact_paths()` - Lists all files in run directory
+
+#### 2.4 Container Management (`src/act/verifier/container.py`)
+
+- `DEFAULT_CPU_LIMIT = 4` - Default CPU cores
+- `DEFAULT_MEMORY_LIMIT = "8g"` - Default memory limit
+- `ContainerConfig` dataclass:
+  - `image` - Docker image name and tag
+  - `repo_path` - Path to repository (mounted read-only at `/workspace`)
+  - `run_dir` - Path to run directory (mounted read-write at `/artifacts`)
+  - `cpu_limit` - CPU limit (default 4)
+  - `memory_limit` - Memory limit (default "8g")
+  - `working_dir` - Container working directory (default "/workspace")
+- `ContainerManager` class:
+  - `__init__(client)` - Accepts optional Docker client for testing
+  - `is_docker_available()` - Checks Docker daemon availability
+  - `pull_image(image)` - Pulls Docker image
+  - `image_exists(image)` - Checks if image exists locally
+  - `create_container(config)` - Creates container with mounts
+  - `start_container(container)` - Starts container
+  - `destroy_container(container)` - Stops and removes container
+  - `exec_in_container(container, command, env_vars)` - Executes command
+- `classify_docker_error(error)` - Maps Docker exceptions to InfraErrorType
+
+#### 2.5 Pipeline Execution (`src/act/verifier/pipeline.py`)
+
+- `DEFAULT_TIMEOUT_MS = 300000` - Default 5-minute timeout
+- `StepResult` dataclass:
+  - `name` - Step name
+  - `command` - Command executed
+  - `exit_code` - Exit code (0 = success)
+  - `duration_ms` - Duration in milliseconds
+  - `timed_out` - Whether step timed out
+- `PipelineExecutor` class:
+  - `__init__(container_manager, container, logs_dir, timeout_ms)`
+  - `execute_steps(steps, env_vars)` - Executes steps sequentially
+  - Stops on first failure (exit_code != 0)
+  - Writes per-step logs: `step-01-install.log`, etc.
+  - Appends all output to `combined.log`
+  - Handles timeouts with thread-based execution
+
+#### 2.6 Main Entry Point (`src/act/verifier/executor.py`)
+
+- `verify(repo_path, config, artifact_dir)` - Main verification function
+- Orchestrates full verification flow:
+  1. Resolves artifact directory (uses env default if not provided)
+  2. Creates run directory via `create_run_dir()`
+  3. Creates `logs/`, `tmp/`, `db/` subdirectories
+  4. Checks Docker availability → INFRA_ERROR if unavailable
+  5. Pulls image if needed → INFRA_ERROR on failure
+  6. Creates container with read-only repo mount
+  7. Starts container → INFRA_ERROR on failure
+  8. Sets environment variables (`TMPDIR=/artifacts/tmp`, `TEST_DB_PATH=/artifacts/db`)
+  9. Executes pipeline steps with timeout
+  10. Writes manifest via `write_manifest()`
+  11. Extracts tail log (last 200 lines)
+  12. Lists artifact paths
+  13. Destroys container (always, via try/finally)
+  14. Returns PASS/FAIL/INFRA_ERROR response
+
+#### 2.7 Public API (`src/act/verifier/__init__.py`)
+
+Exports:
+- `verify` - Main entry point
+- `VerifierResponse`, `VerifierStatus`
+- `create_pass_response`, `create_fail_response`, `create_infra_error_response`
+- `VerifierError`, `ContainerError`, `PipelineError`, `LogError`, `InfraErrorType`
+- `ContainerManager`, `ContainerConfig`
+- `DEFAULT_CPU_LIMIT`, `DEFAULT_MEMORY_LIMIT`
+- `PipelineExecutor`, `StepResult`
+- `TAIL_LOG_LINES`
+
+### Validation results
+
+All validation criteria from the implementation plan pass:
+
+| Test | Command | Result |
+|------|---------|--------|
+| Unit tests | `uv run pytest tests/unit/ -v` | 281 passed |
+| Linting | `uv run ruff check src/` | All checks passed |
+| Type checking | `uv run mypy src/` | Success: no issues found in 23 source files |
+
+### Files created
+
+```
+src/act/verifier/exceptions.py
+src/act/verifier/response.py
+src/act/verifier/logs.py
+src/act/verifier/container.py
+src/act/verifier/pipeline.py
+src/act/verifier/executor.py
+src/act/verifier/__init__.py (updated with exports)
+tests/unit/test_verifier_exceptions.py (13 tests)
+tests/unit/test_verifier_response.py (20 tests)
+tests/unit/test_verifier_logs.py (22 tests)
+tests/unit/test_verifier_container.py (31 tests)
+tests/unit/test_verifier_pipeline.py (22 tests)
+tests/unit/test_verifier_executor.py (26 tests)
+```
+
+### Dependencies
+
+- Uses `docker` package (already in dependencies from Phase 0)
+- Integrates with `act.artifacts` module for run directory, manifest, and timestamps
+- Integrates with `act.config` module for AgentConfig and VerificationStep
+
+### Design decisions
+
+1. **Lazy Docker client initialization** - Client created on first use, not at construction
+2. **Mocked Docker for unit tests** - All tests use mocked Docker client (no Docker required)
+3. **Thread-based timeout** - Uses threading.Thread for command timeout (more portable than signals)
+4. **contextlib.suppress for cleanup** - Gracefully handles already-stopped containers
+5. **Environment as list of strings** - Docker SDK expects `["KEY=VALUE"]` format for env vars
+
+### Next steps
+
+Proceed to **Phase 3: Scouts — Read-Only Analysis Components** as defined in `specs/implementation-plan.md`.
+
+---
