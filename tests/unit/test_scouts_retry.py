@@ -1,6 +1,5 @@
 """Unit tests for Scout retry logic."""
 
-import asyncio
 import time
 from unittest.mock import MagicMock
 

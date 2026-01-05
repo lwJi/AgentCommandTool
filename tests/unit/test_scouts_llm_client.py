@@ -1,12 +1,11 @@
 """Unit tests for Scout LLM client."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from act.config.env import LLMBackend, LLMConfig
-from act.scouts.exceptions import LLMError, SchemaError, ScoutErrorType
+from act.scouts.exceptions import SchemaError
 from act.scouts.llm_client import (
     DEFAULT_ANTHROPIC_MODEL,
     DEFAULT_OPENAI_MODEL,

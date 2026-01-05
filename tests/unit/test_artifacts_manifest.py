@@ -1,7 +1,7 @@
 """Tests for verification run manifest management."""
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -231,13 +231,13 @@ class TestGetUtcTimestamp:
 
     def test_timestamp_is_current(self) -> None:
         """Timestamp reflects current time."""
-        before = datetime.now(timezone.utc)
+        before = datetime.now(UTC)
         timestamp_str = get_utc_timestamp()
-        after = datetime.now(timezone.utc)
+        after = datetime.now(UTC)
 
         # Parse the timestamp
         timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=timezone.utc
+            tzinfo=UTC
         )
 
         # Allow 1 second tolerance
@@ -249,8 +249,8 @@ class TestCreateCommandResult:
 
     def test_calculates_duration(self) -> None:
         """Calculates duration in milliseconds."""
-        start = datetime(2024, 1, 15, 14, 32, 0, tzinfo=timezone.utc)
-        end = datetime(2024, 1, 15, 14, 32, 5, tzinfo=timezone.utc)
+        start = datetime(2024, 1, 15, 14, 32, 0, tzinfo=UTC)
+        end = datetime(2024, 1, 15, 14, 32, 5, tzinfo=UTC)
 
         result = create_command_result(
             name="test",
@@ -264,7 +264,7 @@ class TestCreateCommandResult:
 
     def test_preserves_command_info(self) -> None:
         """Preserves name, command, and exit code."""
-        start = datetime.now(timezone.utc)
+        start = datetime.now(UTC)
         end = start + timedelta(seconds=1)
 
         result = create_command_result(

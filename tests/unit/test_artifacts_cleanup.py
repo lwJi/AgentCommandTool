@@ -1,13 +1,9 @@
 """Tests for artifact retention and cleanup management."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
 from act.artifacts.cleanup import (
-    MAX_AGE_DAYS,
-    MAX_RUNS,
     STUCK_REPORT_FILENAME,
     RunInfo,
     cleanup_runs,
@@ -123,13 +119,13 @@ class TestGetRunsToDelete:
 
     def test_deletes_oldest_when_over_max(self) -> None:
         """Deletes oldest runs when count exceeds max."""
-        now = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2024, 1, 15, 12, 0, 0, tzinfo=UTC)
 
         runs = [
             RunInfo(
                 run_id=f"run_20240115_0{i}0000_abc{i:03d}",
                 run_dir=Path(f"/runs/run_{i}"),
-                timestamp=datetime(2024, 1, 15, i, 0, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2024, 1, 15, i, 0, 0, tzinfo=UTC),
                 has_stuck_report=False,
             )
             for i in range(10, 16)  # 6 runs
@@ -144,19 +140,19 @@ class TestGetRunsToDelete:
 
     def test_deletes_old_runs_by_age(self) -> None:
         """Deletes runs older than max age."""
-        now = datetime(2024, 1, 30, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2024, 1, 30, 12, 0, 0, tzinfo=UTC)
 
         runs = [
             RunInfo(
                 run_id="run_20240110_100000_old001",
                 run_dir=Path("/runs/old1"),
-                timestamp=datetime(2024, 1, 10, 10, 0, 0, tzinfo=timezone.utc),  # 20 days old
+                timestamp=datetime(2024, 1, 10, 10, 0, 0, tzinfo=UTC),  # 20 days old
                 has_stuck_report=False,
             ),
             RunInfo(
                 run_id="run_20240125_100000_new001",
                 run_dir=Path("/runs/new1"),
-                timestamp=datetime(2024, 1, 25, 10, 0, 0, tzinfo=timezone.utc),  # 5 days old
+                timestamp=datetime(2024, 1, 25, 10, 0, 0, tzinfo=UTC),  # 5 days old
                 has_stuck_report=False,
             ),
         ]
@@ -168,19 +164,19 @@ class TestGetRunsToDelete:
 
     def test_preserves_stuck_report_runs(self) -> None:
         """Never deletes runs with stuck reports."""
-        now = datetime(2024, 1, 30, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2024, 1, 30, 12, 0, 0, tzinfo=UTC)
 
         runs = [
             RunInfo(
                 run_id="run_20240101_100000_stuck1",
                 run_dir=Path("/runs/stuck1"),
-                timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc),  # Very old
+                timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=UTC),  # Very old
                 has_stuck_report=True,
             ),
             RunInfo(
                 run_id="run_20240125_100000_normal",
                 run_dir=Path("/runs/normal"),
-                timestamp=datetime(2024, 1, 25, 10, 0, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2024, 1, 25, 10, 0, 0, tzinfo=UTC),
                 has_stuck_report=False,
             ),
         ]
@@ -206,7 +202,7 @@ class TestCleanupRuns:
             _create_run_dir(runs_dir, f"run_20240115_{hour:02d}{minute:02d}00_abc{i:03d}")
 
         # Use a fixed "now" that's close to the run dates (so they're not considered old by age)
-        now = datetime(2024, 1, 16, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2024, 1, 16, 12, 0, 0, tzinfo=UTC)
 
         # Should delete 5 to get to 20
         deleted = cleanup_runs(artifact_dir, max_runs=20, now=now)
@@ -225,7 +221,7 @@ class TestCleanupRuns:
         # Create some recent runs
         _create_run_dir(runs_dir, "run_20240125_100000_new001")
 
-        now = datetime(2024, 1, 30, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2024, 1, 30, 12, 0, 0, tzinfo=UTC)
         deleted = cleanup_runs(artifact_dir, max_age_days=14, now=now)
 
         assert deleted == 2
@@ -245,7 +241,7 @@ class TestCleanupRuns:
         # Create recent normal run
         _create_run_dir(runs_dir, "run_20240125_100000_new001")
 
-        now = datetime(2024, 1, 30, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2024, 1, 30, 12, 0, 0, tzinfo=UTC)
         deleted = cleanup_runs(artifact_dir, max_age_days=14, now=now)
 
         # Stuck run should be preserved despite being old
@@ -291,7 +287,7 @@ class TestRetentionPolicy:
             _create_run_dir(runs_dir, f"run_202401{day:02d}_{hour:02d}0000_abc{i:03d}")
 
         # Use a fixed "now" that's close to the run dates (so they're not considered old by age)
-        now = datetime(2024, 1, 16, 12, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2024, 1, 16, 12, 0, 0, tzinfo=UTC)
 
         # Cleanup
         deleted = cleanup_runs(artifact_dir, max_runs=20, now=now)

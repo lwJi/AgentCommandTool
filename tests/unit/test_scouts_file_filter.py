@@ -1,10 +1,7 @@
 """Unit tests for Scout file exclusion filter."""
 
-import os
 import tempfile
 from pathlib import Path
-
-import pytest
 
 from act.scouts.file_filter import (
     BINARY_EXTENSIONS,

@@ -3,8 +3,6 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from act.config.schema import (
     AgentConfig,
     TimeoutsConfig,
@@ -283,7 +281,7 @@ class TestVerifyPass:
         tmp_path: Path,
     ) -> None:
         """Destroys container after successful execution."""
-        from act.artifacts.manifest import CommandResult, Manifest, PlatformInfo
+        from act.artifacts.manifest import Manifest, PlatformInfo
 
         # Setup mocks
         run_dir = tmp_path / "run"

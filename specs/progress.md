@@ -547,3 +547,248 @@ tests/unit/test_scouts_scout_b.py (18 tests)
 Proceed to **Phase 4: Editor — Orchestrator** as defined in `specs/implementation-plan.md`.
 
 ---
+
+## Phase 4: Editor — Orchestrator (Completed)
+
+**Date:** 2026-01-05
+
+### What was implemented
+
+#### 4.1 Exception Hierarchy (`src/act/editor/exceptions.py`)
+
+- `EditorErrorType` enum: `TASK_PARSE`, `SCOUT_FAILURE`, `VERIFICATION_FAILURE`, `IMPLEMENTATION`, `WRITE_BOUNDARY`, `HARD_STOP`, `INFRA_ERROR`, `UNKNOWN`
+- `EditorError` - Base exception for all Editor errors with error type
+- `TaskParseError(EditorError)` - Task parsing errors
+- `ScoutCoordinationError(EditorError)` - Scout query failures with scout name
+- `ImplementationError(EditorError)` - Code implementation errors with file path
+- `WriteBoundaryError(EditorError)` - Writes outside allowed boundaries with path and boundary info
+- `HardStopError(EditorError)` - Hard stop threshold reached with attempt count and run IDs
+- `InfrastructureError(EditorError)` - Infrastructure failures with source and original error
+
+#### 4.2 Task Parser (`src/act/editor/task.py`)
+
+- `TaskConstraints` dataclass:
+  - `must_preserve` - Files/behaviors that must not change
+  - `non_goals` - Explicitly out-of-scope items
+  - `boundaries` - Limits on what can be modified
+- `SuccessCriteria` dataclass:
+  - `acceptance_criteria` - Specific conditions for success
+  - `behavior_changes` - Expected behavior changes
+- `ParsedTask` dataclass:
+  - `raw_description` - Original task description
+  - `main_objective` - Primary goal extracted
+  - `constraints` - TaskConstraints instance
+  - `success_criteria` - SuccessCriteria instance
+  - `to_dict()` - Serialization method
+- Functions:
+  - `parse_task()` - Parse free-form task description into structured format
+  - `validate_task()` - Validate parsed task and return warnings
+- Extracts constraints from markdown sections (Constraints:, Non-goals:, Boundaries:)
+- Infers success criteria from task verbs (fix, add, refactor, test, update)
+
+#### 4.3 Scout Coordination (`src/act/editor/coordinator.py`)
+
+- `ScoutResults` dataclass:
+  - `scout_a_response` - ScoutAResponse or None
+  - `scout_b_response` - ScoutBResponse or None
+  - `scout_a_raw` - Raw JSON dict from Scout A
+  - `scout_b_raw` - Raw JSON dict from Scout B
+  - `conflict_resolution` - Resolution rationale if conflicts existed
+  - `has_scout_a()`, `has_scout_b()` - Check response availability
+  - `to_dict()` - Serialization method
+- `ScoutCoordinator` class:
+  - `reset()` - Clear Scout contexts for new task
+  - `query_scouts_parallel()` - Query both Scouts concurrently
+  - `query_scout_a()` - Query Scout A only (with optional file contents)
+  - `query_scout_b()` - Query Scout B only (with optional log content)
+  - `analyze_failure()` - Analyze verification failure via Scout B
+  - `initial_analysis()` - Combined initial analysis for new task
+  - `resolve_conflict()` - Autonomous conflict resolution (prefers Scout B for build/test, Scout A for code)
+  - `get_last_results()` - Access last query results
+- Factory function: `create_scout_coordinator()`
+- Wraps Scout errors into `InfrastructureError` or `ScoutCoordinationError`
+
+#### 4.4 Debug Loop (`src/act/editor/debug_loop.py`)
+
+- Constants:
+  - `CONSECUTIVE_FAILURE_THRESHOLD = 3` - Triggers REPLAN
+  - `TOTAL_VERIFY_LOOP_THRESHOLD = 12` - Triggers hard stop
+  - `MAX_REPLANS = 3` - Maximum REPLANs (at attempts 3, 6, 9)
+- `LoopAction` enum: `CONTINUE`, `REPLAN`, `HARD_STOP`, `SUCCESS`
+- `VerifyAttempt` dataclass: run_id, passed, failure_summary, attempt_number
+- `DebugLoopState` dataclass:
+  - `consecutive_failures` - Counter (resets on REPLAN)
+  - `total_verify_loops` - Counter (never resets except on success)
+  - `replan_count` - Number of REPLANs triggered
+  - `attempts` - List of all verification attempts
+  - `current_hypothesis` - Current strategy being tested
+  - `strategy_history` - List of all strategies tried
+  - `to_dict()`, `get_all_run_ids()` - Utility methods
+- `DebugLoop` class:
+  - `reset()` - Reset for new task
+  - `record_success()` - Record pass, return SUCCESS
+  - `record_failure()` - Record fail, return CONTINUE/REPLAN/HARD_STOP
+  - `trigger_replan()` - Reset consecutive counter, increment replan count
+  - `set_hypothesis()` - Update current hypothesis
+  - `should_requery_scouts()` - Determine if Scouts need re-query
+  - `get_failure_summary()` - Markdown summary of all failures
+  - `get_attempt_count_display()` - Human-readable "Attempt N/12"
+- Factory function: `create_debug_loop()`
+
+#### 4.5 Output Generators (`src/act/editor/outputs.py`)
+
+- `STUCK_REPORT_FILENAME = "stuck_report.md"`
+- `SuccessSummary` dataclass:
+  - `task_description`, `what_changed`, `why`, `how_verified`, `run_id`
+  - `files_modified` - List of modified files
+  - `timestamp` - UTC timestamp
+  - `to_markdown()` - Generate markdown summary
+- `StuckReportHypothesis` dataclass:
+  - `title`, `description`, `suggested_investigation`
+- `StuckReport` dataclass:
+  - `task_description`, `constraints`, `status`
+  - `hypotheses` - List of StuckReportHypothesis
+  - `verification_history` - List of attempt records
+  - `artifact_references` - List of run IDs
+  - `files_modified`, `is_infra_error`, `infra_error_source`, `infra_error_message`
+  - `to_markdown()` - Generate comprehensive markdown report
+- Functions:
+  - `generate_success_summary()` - Create SuccessSummary from task/run data
+  - `generate_stuck_report_hypotheses()` - Autonomously generate hypotheses from failure patterns
+  - `generate_stuck_report()` - Create StuckReport from task/loop state
+  - `write_stuck_report()` - Write report to agent directory
+  - `read_stuck_report()` - Read existing report
+  - `has_stuck_report()` - Check if report exists
+- Hypothesis patterns: import/module errors, type errors, timeouts, permissions, too many replans, large change scope
+
+#### 4.6 Dry-Run Mode (`src/act/editor/dry_run.py`)
+
+- `FileChange` dataclass:
+  - `relative_path`, `original_content`, `new_content`
+  - `is_new_file`, `is_deletion`
+  - `to_unified_diff()` - Generate unified diff output
+- `DryRunProposal` dataclass:
+  - `changes` - List of FileChange
+  - `timestamp` - Creation timestamp
+  - `to_markdown()` - Generate markdown proposal
+- `DryRunManager` class:
+  - `start()` - Begin dry-run mode
+  - `is_active` - Check if active
+  - `propose_file_change()` - Stage a file change
+  - `propose_file_deletion()` - Stage a file deletion
+  - `get_diff()` - Get combined unified diff
+  - `apply_changes()` - Write all changes to filesystem
+  - `discard_changes()` - Discard without applying
+  - `reset()` - Clear state
+- Factory function: `create_dry_run_manager()`
+- Function: `format_proposal_output()` - Format proposal for display
+
+#### 4.7 Write Boundaries (`src/act/editor/boundaries.py`)
+
+- `WriteBoundaryEnforcer` class:
+  - `validate_path()` - Ensure path is within repo or agent directory
+  - `is_in_repo()` - Check if path is in repository
+  - `is_in_agent_dir()` - Check if path is in agent/ directory
+  - `is_in_artifact_dir()` - Check if path is in artifact directory (NOT allowed for write)
+  - `get_relative_path()` - Get path relative to repo root
+- Factory function: `create_boundary_enforcer()`
+- Prevents writes outside repo + agent/ boundaries
+- Explicitly blocks writes to artifact directory
+
+#### 4.8 Main Editor Orchestrator (`src/act/editor/editor.py`)
+
+- `WorkflowState` enum: `IDLE`, `ANALYZING`, `IMPLEMENTING`, `VERIFYING`, `DEBUGGING`, `REPLANNING`, `COMPLETED`, `STUCK`, `INFRA_ERROR`
+- `EditorContext` dataclass:
+  - `task` - Current ParsedTask
+  - `scout_results` - Latest ScoutResults
+  - `files_modified` - List of modified files
+  - `current_hypothesis` - Current strategy
+  - `last_verification` - Last VerifierResponse
+  - `dry_run_mode` - Whether in dry-run mode
+  - `to_dict()` - Serialization method
+- `Editor` class:
+  - Properties: `state`, `context`, `debug_loop`, `coordinator`, `dry_run_manager`, `boundary_enforcer`
+  - `reset()` - Reset for new task
+  - `start_task()` - Begin new task (with optional dry-run)
+  - `analyze_codebase()` - Perform initial Scout analysis
+  - `validate_write_path()` - Validate path against boundaries
+  - `record_file_modification()` - Track modified files
+  - `handle_verification_result()` - Process verification response, determine next action
+  - `trigger_replan()` - Execute REPLAN with optional Scout re-query
+  - `generate_success_summary()` - Create success summary
+  - `generate_stuck_report()` - Create and write stuck report
+  - `get_dry_run_proposal()` - Get current proposal
+  - `apply_dry_run_changes()` - Apply dry-run changes
+  - `discard_dry_run_changes()` - Discard dry-run changes
+  - `get_status_message()` - Human-readable status
+- Creates context snapshots at milestones (TASK_START, REPLAN, TASK_SUCCESS)
+- Checks for existing stuck report on task resume
+- Factory function: `create_editor()`
+
+#### 4.9 Public API (`src/act/editor/__init__.py`)
+
+Exports all Editor components:
+- Exceptions: `EditorError`, `EditorErrorType`, `TaskParseError`, `ScoutCoordinationError`, `ImplementationError`, `WriteBoundaryError`, `HardStopError`, `InfrastructureError`
+- Task parsing: `ParsedTask`, `TaskConstraints`, `SuccessCriteria`, `parse_task`, `validate_task`
+- Scout coordination: `ScoutCoordinator`, `ScoutResults`, `create_scout_coordinator`
+- Debug loop: `DebugLoop`, `DebugLoopState`, `LoopAction`, `VerifyAttempt`, `create_debug_loop`, `CONSECUTIVE_FAILURE_THRESHOLD`, `TOTAL_VERIFY_LOOP_THRESHOLD`, `MAX_REPLANS`
+- Outputs: `SuccessSummary`, `StuckReport`, `StuckReportHypothesis`, `generate_success_summary`, `generate_stuck_report`, `generate_stuck_report_hypotheses`, `write_stuck_report`, `read_stuck_report`, `has_stuck_report`, `STUCK_REPORT_FILENAME`
+- Dry-run: `DryRunManager`, `DryRunProposal`, `FileChange`, `create_dry_run_manager`, `format_proposal_output`
+- Boundaries: `WriteBoundaryEnforcer`, `create_boundary_enforcer`
+- Main Editor: `Editor`, `EditorContext`, `WorkflowState`, `create_editor`
+
+### Validation results
+
+All validation criteria from the implementation plan pass:
+
+| Test | Command | Result |
+|------|---------|--------|
+| Unit tests | `uv run pytest tests/unit/ -v` | 644 passed |
+| Linting | `uv run ruff check src/act/editor/` | All checks passed |
+| Type checking | `uv run mypy src/act/editor/` | Success: no issues found in 9 source files |
+
+### Files created
+
+```
+src/act/editor/exceptions.py
+src/act/editor/task.py
+src/act/editor/coordinator.py
+src/act/editor/debug_loop.py
+src/act/editor/outputs.py
+src/act/editor/dry_run.py
+src/act/editor/boundaries.py
+src/act/editor/editor.py
+src/act/editor/__init__.py (updated with exports)
+tests/unit/test_editor_exceptions.py (19 tests)
+tests/unit/test_editor_task.py (21 tests)
+tests/unit/test_editor_coordinator.py (22 tests)
+tests/unit/test_editor_debug_loop.py (29 tests)
+tests/unit/test_editor_outputs.py (27 tests)
+tests/unit/test_editor_dry_run.py (27 tests)
+tests/unit/test_editor_boundaries.py (19 tests)
+tests/unit/test_editor_editor.py (36 tests)
+```
+
+### Dependencies
+
+- Integrates with `act.config` module for `AgentConfig`, `LLMConfig`, `EnvConfig`
+- Integrates with `act.artifacts` module for context snapshots and agent directory
+- Integrates with `act.scouts` module for Scout A/B coordination
+- Integrates with `act.verifier` module for VerifierResponse handling
+
+### Design decisions
+
+1. **Pull-based Scout queries** - Editor initiates all Scout queries; Scouts never push data
+2. **Autonomous conflict resolution** - Editor resolves Scout disagreements without user input
+3. **Fix-forward strategy** - Never revert on failure; diagnose and fix forward
+4. **Immutable constraints** - Task constraints are extracted once and never modified
+5. **Hypothesis tracking** - Each REPLAN records the new strategy for debugging
+6. **Context snapshots only at milestones** - Reduces noise; snapshots at TASK_START, REPLAN, TASK_SUCCESS only
+7. **Dry-run as separate mode** - Changes staged in memory until explicit apply/discard
+8. **Strict write boundaries** - Only repo/ and agent/ are writable; artifact dir is read-only from Editor perspective
+
+### Next steps
+
+Proceed to **Phase 5: Integration — CLI Entry Points** as defined in `specs/implementation-plan.md`.
+
+---
