@@ -993,3 +993,233 @@ tests/unit/test_task_retry.py (20 tests)
 Proceed to **Phase 6: Integration Testing** as defined in `specs/implementation-plan.md`.
 
 ---
+
+## Phase 6: Integration and Polish (Completed)
+
+**Date:** 2026-01-05
+
+### What was implemented
+
+#### 6.1 Core Infrastructure Module (`src/act/core/`)
+
+**6.1.1 Structured Logging** (`logging.py`)
+- `LogLevel` enum: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+- `LogEntry` dataclass with JSON serialization:
+  - `timestamp`, `level`, `component`, `message`, `context`
+  - `to_json()` method for structured output
+- `StructuredLogger` class:
+  - `log()` - Generic log method with context
+  - `debug()`, `info()`, `warning()`, `error()`, `critical()` - Level-specific methods
+  - `log_state_transition()` - Log Editor state transitions
+  - `log_scout_query()` - Log Scout queries with timing
+  - `log_verifier_trigger()` - Log verification start
+  - `log_verifier_result()` - Log verification result with duration
+  - `log_replan()` - Log REPLAN events
+  - `log_task_start()`, `log_task_end()` - Log task lifecycle
+- Factory functions: `get_logger()`, `reset_logger()`
+
+**6.1.2 Metrics Collection** (`metrics.py`)
+- `LatencyStats` dataclass with percentile calculations:
+  - `record()`, `reset()`, `avg_ms`, `p50_ms`, `p95_ms`, `p99_ms`
+  - `to_dict()` for serialization
+- `TaskMetrics` dataclass:
+  - Task-specific metrics: `verification_attempts`, `replan_count`, `scout_query_count`
+  - `total_scout_latency_ms`, `final_state`, `duration_ms`
+  - `to_dict()` for serialization
+- `MetricsCollector` class (thread-safe):
+  - `start_task()`, `end_task()` - Task lifecycle tracking
+  - `record_verification_attempt()` - Track verification attempts
+  - `record_replan()` - Track REPLAN events
+  - `record_scout_query()` - Track Scout query latency
+  - `record_verifier_execution()` - Track verifier execution time
+  - `get_task_metrics()` - Get metrics for specific task
+  - `get_summary()` - Get aggregate metrics summary
+  - `reset()` - Clear all metrics
+- `Timer` context manager for timing operations
+- Singleton functions: `get_metrics_collector()`, `reset_metrics_collector()`
+
+**6.1.3 Error Handling** (`error_handling.py`)
+- `ErrorSeverity` enum: `WARNING`, `ERROR`, `CRITICAL`
+- `ErrorContext` dataclass:
+  - `operation`, `component`, `task_id`, `additional_info`
+  - `to_dict()` for serialization
+- `GracefulErrorHandler` class:
+  - `handle_error()` - Unified error handling with logging and state determination
+  - `wrap_operation()` - Wrap operations with automatic error handling
+  - `_determine_state()` - Map exceptions to appropriate task states
+- Factory functions: `create_error_handler()`, `get_error_handler()`, `set_error_handler()`, `reset_error_handler()`
+
+**6.1.4 Input Validation** (`validation.py`)
+- `ValidationResult` dataclass:
+  - `valid`, `errors`, `warnings`
+  - `add_error()`, `add_warning()`, `merge()`, `to_dict()`
+  - Static methods: `success()`, `failure()`
+- `ValidationError` exception with `result` attribute
+- Validation functions:
+  - `validate_task_input()` - Validate task description (non-empty, length limits)
+  - `validate_agent_config()` - Validate agent.yaml exists and is valid
+  - `validate_docker_available()` - Check Docker daemon availability
+  - `validate_repo_path()` - Validate repository path
+  - `validate_all_inputs()` - Combined validation with skip_docker option
+  - `require_valid_inputs()` - Raises ValidationError on failure
+- Constants: `MIN_TASK_DESCRIPTION_LENGTH = 3`, `MAX_TASK_DESCRIPTION_LENGTH = 5000`
+
+#### 6.2 Unit Tests for Core Module (126 tests)
+
+- `tests/unit/test_core_logging.py` - 34 tests
+- `tests/unit/test_core_metrics.py` - 29 tests
+- `tests/unit/test_core_error_handling.py` - 22 tests
+- `tests/unit/test_core_validation.py` - 41 tests
+
+#### 6.3 Integration Test Infrastructure (`tests/integration/conftest.py`)
+
+- Repository fixtures:
+  - `integration_repo(tmp_path)` - Realistic repo with src/, tests/, agent.yaml
+  - `artifact_dir(tmp_path)` - Artifact directory with runs/ and cache/
+- Configuration fixtures:
+  - `mock_llm_config` - Test LLM configuration
+  - `mock_env_config` - Test environment configuration
+  - `mock_agent_config` - Test agent configuration with verification steps
+- Scout fixtures:
+  - `mock_scout_a_response` - Realistic Scout A response
+  - `mock_scout_b_response` - Realistic Scout B response
+  - `mock_scout_results` - Combined Scout results
+- Display fixtures:
+  - `capture_console` - Console for output capture
+  - `integration_queue` - Fresh task queue per test
+  - `integration_display` - Status display for tests
+- Helper functions:
+  - `make_pass_response()` - Create PASS VerifierResponse
+  - `make_fail_response()` - Create FAIL VerifierResponse
+  - `make_infra_error_response()` - Create INFRA_ERROR VerifierResponse
+
+#### 6.4 Integration Tests (7 test files, 51 tests)
+
+**6.4.1 Success Flow** (`test_success_flow.py`) - 8 tests
+- Editor completes task on first verification pass
+- Success generates summary with run_id
+- State transitions correctly (IDLE → ANALYZING → COMPLETED)
+- Context snapshots created at task start and success
+- Debug loop counters properly maintained
+
+**6.4.2 REPLAN Flow** (`test_replan_flow.py`) - 6 tests
+- Three consecutive failures trigger REPLAN
+- REPLAN resets consecutive failure counter
+- REPLAN preserves total verify loop count
+- Maximum 3 REPLANs before STUCK
+- Two failures then success doesn't trigger REPLAN
+
+**6.4.3 Hard Stop Flow** (`test_hard_stop_flow.py`) - 7 tests
+- 12 iterations trigger hard stop
+- Hard stop preserves run history
+- STUCK state prevents further verification
+- Success before 12 loops prevents hard stop
+- Stuck report can be generated
+- Stuck report includes REPLAN count
+
+**6.4.4 INFRA_ERROR from Verifier** (`test_infra_error_verifier.py`) - 6 tests
+- Docker unavailable triggers INFRA_ERROR
+- Container creation failure triggers INFRA_ERROR
+- Resource exhaustion triggers INFRA_ERROR
+- INFRA_ERROR prevents further operations
+- INFRA_ERROR doesn't count as failure
+- Work is preserved on INFRA_ERROR
+
+**6.4.5 INFRA_ERROR from Scout** (`test_infra_error_scout.py`) - 7 tests
+- Scout A LLM error triggers INFRA_ERROR
+- Scout B LLM error triggers INFRA_ERROR
+- Scout API timeout triggers INFRA_ERROR
+- Scout error preserves task state
+- Scout error allows retry after recovery
+- InfrastructureError includes source and message
+
+**6.4.6 Cancellation Flow** (`test_cancellation_flow.py`) - 9 tests
+- Cancellation during analysis transitions to CANCELLED
+- Cancellation during verification transitions to CANCELLED
+- Cancellation preserves file modifications
+- Cancellation preserves context snapshots
+- Cancellation preserves debug loop state
+- New task can start after cancellation
+- Task queue cancellation by state change
+
+**6.4.7 Dry-Run Flow** (`test_dry_run_flow.py`) - 8 tests
+- Dry-run creates proposal without filesystem changes
+- Dry-run does not modify source files
+- Dry-run generates proposal content
+- Dry-run flag preserved throughout lifecycle
+- Dry-run creates context snapshots
+- Changes can be applied after dry-run
+- Normal mode works after dry-run preview
+
+#### 6.5 API Enhancements
+
+- `WorkflowState.CANCELLED` added to Editor states
+- `LoopAction.STUCK` and `LoopAction.INFRA_ERROR` added to debug loop
+- `Editor.cancel()` method for task cancellation
+- `handle_verification_result()` changed to synchronous (was async)
+- `create_editor()` now accepts optional `env_config` parameter
+
+### Validation results
+
+All validation criteria from the implementation plan pass:
+
+| Test | Command | Result |
+|------|---------|--------|
+| All tests | `uv run pytest tests/ -v` | 963 passed |
+| Integration tests | `uv run pytest tests/integration/ -v` | 51 passed |
+| Linting | `uv run ruff check src/` | All checks passed |
+
+### Files created
+
+```
+src/act/core/__init__.py
+src/act/core/logging.py
+src/act/core/metrics.py
+src/act/core/error_handling.py
+src/act/core/validation.py
+tests/unit/test_core_logging.py (34 tests)
+tests/unit/test_core_metrics.py (29 tests)
+tests/unit/test_core_error_handling.py (22 tests)
+tests/unit/test_core_validation.py (41 tests)
+tests/integration/__init__.py
+tests/integration/conftest.py
+tests/integration/test_success_flow.py (8 tests)
+tests/integration/test_replan_flow.py (6 tests)
+tests/integration/test_hard_stop_flow.py (7 tests)
+tests/integration/test_infra_error_verifier.py (6 tests)
+tests/integration/test_infra_error_scout.py (7 tests)
+tests/integration/test_cancellation_flow.py (9 tests)
+tests/integration/test_dry_run_flow.py (8 tests)
+```
+
+### Files modified
+
+```
+src/act/editor/editor.py (added CANCELLED state, cancel() method, env_config param)
+src/act/editor/debug_loop.py (added STUCK, INFRA_ERROR to LoopAction)
+tests/unit/test_editor_editor.py (updated for sync handle_verification_result)
+tests/unit/test_editor_debug_loop.py (updated for new LoopAction values)
+```
+
+### Design decisions
+
+1. **Structured JSON logging** - All logs are JSON-serializable for machine parsing
+2. **Thread-safe metrics** - MetricsCollector uses threading.Lock for concurrent access
+3. **Percentile calculations** - LatencyStats uses sorted array indexing for p50/p95/p99
+4. **Graceful error handling** - Errors map to appropriate task states (STUCK, INFRA_ERROR)
+5. **Validation composition** - validate_all_inputs() composes individual validators
+6. **Synchronous verification handling** - handle_verification_result() simplified to sync
+7. **Terminal state handling** - Terminal states (STUCK, INFRA_ERROR, CANCELLED) prevent further operations
+
+### Summary
+
+Phase 6 completes the AgentCommandTool implementation with:
+- **Core infrastructure module** for logging, metrics, error handling, and validation
+- **126 unit tests** covering all core module functionality
+- **51 integration tests** covering all 7 end-to-end scenarios
+- **963 total tests** passing
+- **API enhancements** for cancellation and terminal state handling
+
+The implementation is now feature-complete as specified in `specs/implementation-plan.md`.
+
+---

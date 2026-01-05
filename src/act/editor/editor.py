@@ -25,7 +25,6 @@ from act.editor.coordinator import (
     create_scout_coordinator,
 )
 from act.editor.debug_loop import (
-    TOTAL_VERIFY_LOOP_THRESHOLD,
     DebugLoop,
     LoopAction,
     create_debug_loop,
@@ -33,7 +32,6 @@ from act.editor.debug_loop import (
 from act.editor.dry_run import DryRunManager, DryRunProposal, create_dry_run_manager
 from act.editor.exceptions import (
     EditorError,
-    HardStopError,
     InfrastructureError,
 )
 from act.editor.outputs import (
@@ -61,6 +59,7 @@ class WorkflowState(Enum):
     COMPLETED = "completed"
     STUCK = "stuck"
     INFRA_ERROR = "infra_error"
+    CANCELLED = "cancelled"
 
 
 @dataclass
@@ -190,6 +189,18 @@ class Editor:
         self._coordinator.reset()
         self._dry_run_manager.reset()
 
+    def cancel(self) -> None:
+        """Cancel the current task.
+
+        Transitions the Editor to CANCELLED state, preserving any
+        partial work done (file modifications, context snapshots).
+        """
+        if self._state in (WorkflowState.COMPLETED, WorkflowState.STUCK,
+                           WorkflowState.INFRA_ERROR, WorkflowState.CANCELLED):
+            # Already in terminal state
+            return
+        self._state = WorkflowState.CANCELLED
+
     async def start_task(
         self,
         task_description: str,
@@ -282,7 +293,7 @@ class Editor:
         if relative_path not in self._context.files_modified:
             self._context.files_modified.append(relative_path)
 
-    async def handle_verification_result(
+    def handle_verification_result(
         self,
         response: VerifierResponse,
     ) -> LoopAction:
@@ -295,20 +306,21 @@ class Editor:
 
         Returns:
             Action to take next.
-
-        Raises:
-            HardStopError: When hard stop threshold is reached.
-            InfrastructureError: On Verifier infrastructure errors.
         """
+        # Handle terminal states
+        if self._state == WorkflowState.STUCK:
+            return LoopAction.STUCK
+        if self._state == WorkflowState.INFRA_ERROR:
+            return LoopAction.INFRA_ERROR
+        if self._state == WorkflowState.CANCELLED:
+            return LoopAction.INFRA_ERROR  # Treat cancellation like infra error
+
         self._context.last_verification = response
 
         # Handle infrastructure error
         if response.status == VerifierStatus.INFRA_ERROR:
             self._state = WorkflowState.INFRA_ERROR
-            raise InfrastructureError(
-                response.error_message or "Verifier infrastructure error",
-                source="verifier",
-            )
+            return LoopAction.INFRA_ERROR
 
         # Handle success
         if response.status == VerifierStatus.PASS:
@@ -330,11 +342,7 @@ class Editor:
 
         if action == LoopAction.HARD_STOP:
             self._state = WorkflowState.STUCK
-            raise HardStopError(
-                f"Hard stop after {TOTAL_VERIFY_LOOP_THRESHOLD} verification attempts",
-                total_attempts=self._debug_loop.total_verify_loops,
-                run_ids=self._debug_loop.state.get_all_run_ids(),
-            )
+            return LoopAction.STUCK
 
         if action == LoopAction.REPLAN:
             self._state = WorkflowState.REPLANNING
@@ -520,6 +528,7 @@ def create_editor(
     repo_root: Path | str,
     agent_config: AgentConfig,
     llm_config: LLMConfig | None = None,
+    env_config: EnvConfig | None = None,
 ) -> Editor:
     """Create an Editor instance.
 
@@ -527,8 +536,9 @@ def create_editor(
         repo_root: Repository root path.
         agent_config: Agent configuration.
         llm_config: Optional LLM configuration.
+        env_config: Optional environment configuration.
 
     Returns:
         Configured Editor instance.
     """
-    return Editor(repo_root, agent_config, llm_config)
+    return Editor(repo_root, agent_config, llm_config, env_config)

@@ -87,6 +87,7 @@ class TestEditorState:
             "COMPLETED",
             "STUCK",
             "INFRA_ERROR",
+            "CANCELLED",
         ]
         actual = [s.name for s in WorkflowState]
         assert set(expected) == set(actual)
@@ -227,7 +228,7 @@ class TestEditorVerification:
             status=VerifierStatus.PASS,
             run_id="run_001",
         )
-        action = await editor.handle_verification_result(response)
+        action = editor.handle_verification_result(response)
 
         assert action == LoopAction.SUCCESS
         assert editor.state == WorkflowState.COMPLETED
@@ -242,7 +243,7 @@ class TestEditorVerification:
             run_id="run_001",
             tail_log="Error: test failed",
         )
-        action = await editor.handle_verification_result(response)
+        action = editor.handle_verification_result(response)
 
         assert action == LoopAction.CONTINUE
         assert editor.state == WorkflowState.DEBUGGING
@@ -257,10 +258,9 @@ class TestEditorVerification:
             error_message="Docker unavailable",
         )
 
-        with pytest.raises(InfrastructureError) as exc_info:
-            await editor.handle_verification_result(response)
+        action = editor.handle_verification_result(response)
 
-        assert exc_info.value.source == "verifier"
+        assert action == LoopAction.INFRA_ERROR
         assert editor.state == WorkflowState.INFRA_ERROR
 
     @pytest.mark.asyncio
@@ -273,7 +273,7 @@ class TestEditorVerification:
                 status=VerifierStatus.FAIL,
                 run_id=f"run_{i:03d}",
             )
-            action = await editor.handle_verification_result(response)
+            action = editor.handle_verification_result(response)
 
         assert action == LoopAction.REPLAN
         assert editor.state == WorkflowState.REPLANNING
@@ -288,11 +288,10 @@ class TestEditorVerification:
                 status=VerifierStatus.FAIL,
                 run_id=f"run_{i:03d}",
             )
-            try:
-                action = await editor.handle_verification_result(response)
-                if action == LoopAction.REPLAN:
-                    await editor.trigger_replan(f"Strategy {i}")
-            except HardStopError:
+            action = editor.handle_verification_result(response)
+            if action == LoopAction.REPLAN:
+                await editor.trigger_replan(f"Strategy {i}")
+            elif action == LoopAction.STUCK:
                 # Expected at loop 12
                 break
 

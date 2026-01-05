@@ -34,7 +34,7 @@ class TestLoopAction:
 
     def test_all_actions_defined(self) -> None:
         """Test all expected actions are defined."""
-        expected = ["CONTINUE", "REPLAN", "HARD_STOP", "SUCCESS"]
+        expected = ["CONTINUE", "REPLAN", "HARD_STOP", "SUCCESS", "STUCK", "INFRA_ERROR"]
         actual = [a.name for a in LoopAction]
         assert set(expected) == set(actual)
 
