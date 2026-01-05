@@ -3,8 +3,6 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from act.config.schema import VerificationStep
 from act.verifier.pipeline import (
     DEFAULT_TIMEOUT_MS,

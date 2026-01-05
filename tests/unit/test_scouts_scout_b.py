@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from act.config.env import LLMBackend, LLMConfig
-from act.scouts.schemas import SCHEMA_VERSION, BuildSystem, ScoutBResponse, TestFramework
+from act.scouts.schemas import (
+    SCHEMA_VERSION,
+    BuildSystem,
+    ScoutBResponse,
+    TestFramework,
+)
 from act.scouts.scout_b import (
     BUILD_CONFIG_FILES,
     MAX_LOG_SIZE,

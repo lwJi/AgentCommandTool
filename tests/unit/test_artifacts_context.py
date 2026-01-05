@@ -2,11 +2,7 @@
 
 from pathlib import Path
 
-import pytest
-
 from act.artifacts.context import (
-    ContextError,
-    ContextSnapshot,
     EditorState,
     Milestone,
     get_latest_snapshot_path,

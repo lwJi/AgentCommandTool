@@ -2,9 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
-from act.verifier.exceptions import LogError
 from act.verifier.logs import (
     TAIL_LOG_LINES,
     append_combined_log,

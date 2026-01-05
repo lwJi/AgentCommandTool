@@ -2,10 +2,7 @@
 
 from pathlib import Path
 
-import pytest
-
 from act.artifacts.context_dir import (
-    ContextDirError,
     ensure_agent_dir,
     ensure_gitignore_entry,
     get_agent_dir,

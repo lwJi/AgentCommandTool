@@ -1,12 +1,8 @@
 """Tests for ARTIFACT_DIR directory structure management."""
 
-import tempfile
 from pathlib import Path
 
-import pytest
-
 from act.artifacts.dirs import (
-    ArtifactDirError,
     ensure_artifact_dir_structure,
     get_cache_dir,
     get_runs_dir,

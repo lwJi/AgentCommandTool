@@ -1,13 +1,10 @@
 """Tests for run ID generation and management."""
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-import pytest
-
 from act.artifacts.run_id import (
-    RunIDError,
     create_run_dir,
     generate_run_id,
     get_run_dir,
@@ -35,13 +32,13 @@ class TestGenerateRunId:
 
     def test_timestamp_is_utc(self) -> None:
         """Run ID timestamp reflects UTC time."""
-        before = datetime.now(timezone.utc).replace(microsecond=0)
+        before = datetime.now(UTC).replace(microsecond=0)
         run_id = generate_run_id()
-        after = datetime.now(timezone.utc).replace(microsecond=0)
+        after = datetime.now(UTC).replace(microsecond=0)
 
         timestamp = parse_run_id_timestamp(run_id)
         assert timestamp is not None
-        assert timestamp.tzinfo == timezone.utc
+        assert timestamp.tzinfo == UTC
 
         # Timestamp should be between before and after (both truncated to seconds)
         # Allow 1 second tolerance for edge cases at second boundaries
@@ -144,7 +141,7 @@ class TestParseRunIdTimestamp:
         assert timestamp.hour == 14
         assert timestamp.minute == 32
         assert timestamp.second == 0
-        assert timestamp.tzinfo == timezone.utc
+        assert timestamp.tzinfo == UTC
 
     def test_returns_none_for_invalid_format(self) -> None:
         """Returns None for invalid formats."""
