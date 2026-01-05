@@ -369,3 +369,181 @@ tests/unit/test_verifier_executor.py (26 tests)
 Proceed to **Phase 3: Scouts — Read-Only Analysis Components** as defined in `specs/implementation-plan.md`.
 
 ---
+
+## Phase 3: Scouts — Read-Only Analysis Components (Completed)
+
+**Date:** 2026-01-05
+
+### What was implemented
+
+#### 3.1 Scout Infrastructure (Shared)
+
+**3.1.1 Exception Hierarchy** (`src/act/scouts/exceptions.py`)
+- `ScoutError` - Base exception for all Scout errors
+- `LLMError(ScoutError)` - LLM communication errors with error type
+- `SchemaError(ScoutError)` - Schema validation errors with payload
+- `RetryExhaustedError(ScoutError)` - All retries exhausted with attempt count
+- `FileExclusionError(ScoutError)` - File exclusion filter errors
+- `ScoutErrorType` enum: `LLM_UNAVAILABLE`, `LLM_TIMEOUT`, `LLM_RATE_LIMIT`, `LLM_RESPONSE_INVALID`, `SCHEMA_VALIDATION`, `RETRY_EXHAUSTED`, `UNKNOWN`
+
+**3.1.2 File Exclusion Filter** (`src/act/scouts/file_filter.py`)
+- `BINARY_EXTENSIONS` - Frozen set of binary file extensions (.png, .jpg, .exe, .dll, .zip, etc.)
+- `SECRET_PATTERNS` - Tuple of secret file patterns (.env, *credentials*, *secrets*, *.pem, etc.)
+- `EXCLUDED_DIRECTORIES` - Frozen set of excluded directories (.git, node_modules, __pycache__, etc.)
+- Functions:
+  - `is_binary_file()` - Check if file is binary by extension
+  - `is_secret_file()` - Check if file matches secret patterns
+  - `is_excluded_directory()` - Check if directory should be excluded
+  - `should_exclude_file()` - Combined binary/secret check
+  - `should_exclude_path()` - Full path exclusion check
+  - `filter_files()` - Filter file list
+  - `discover_files()` - Walk directory and discover analyzable files
+
+**3.1.3 Retry with Exponential Backoff** (`src/act/scouts/retry.py`)
+- Default configuration: 3 retries, 1s initial delay, 2x multiplier, 10s max delay
+- Backoff pattern: 1s, 2s, 4s
+- `calculate_delay()` - Calculate delay for given attempt
+- `is_retryable_error()` - Determine if error should trigger retry
+- `retry_sync()` - Synchronous retry wrapper
+- `retry_async()` - Asynchronous retry wrapper
+- `RetryConfig` dataclass with `calculate_total_wait_time()`
+
+**3.1.4 LLM Client** (`src/act/scouts/llm_client.py`)
+- `LLMMessage` dataclass: role, content
+- `LLMResponse` dataclass: content, raw_response, model, usage
+- `LLMClient` class:
+  - Supports Anthropic, OpenAI, and custom OpenAI-compatible endpoints
+  - `query()` - Single query to LLM
+  - `query_with_retry()` - Query with automatic retry on transient failures
+  - `query_json()` - Query and parse JSON response (handles markdown code blocks)
+- Default models: `claude-sonnet-4-20250514` (Anthropic), `gpt-4o` (OpenAI)
+- Timeout handling with `TimeoutError`
+- Error classification for rate limits, connection issues
+
+#### 3.2 Scout Schemas (v1) (`src/act/scouts/schemas.py`)
+
+**Scout A Response Schema:**
+- `RelevantFile` - path, purpose, relevance (primary/secondary/context)
+- `RepoMap` - relevant_files, entry_points, dependency_graph
+- `RiskZone` - file, start_line, end_line, risk_level, complexity, dependencies, invariants, rationale
+- `SafeSlice` - id, files, description, complexity, order
+- `ChangeBoundaries` - safe_slices, ordering_constraints
+- `Conventions` - naming, patterns, anti_patterns
+- `PriorArt` - file, description, relevance
+- `ScoutAResponse` - Full response with all fields and `to_dict()` method
+
+**Scout B Response Schema:**
+- `BuildCommands` - install, build, clean
+- `BuildInfo` - detected_system, commands, prerequisites, notes
+- `TestCommands` - all, unit, integration
+- `TestInfo` - detected_framework, commands, coverage_command, notes
+- `FailureAnalysis` - root_cause, affected_files, suggested_investigation, is_flaky, flaky_reason
+- `EnvironmentIssue` - issue, severity (blocking/warning), suggested_fix
+- `ScoutBResponse` - Full response with all fields and `to_dict()` method
+
+**Enums:**
+- `Relevance` - PRIMARY, SECONDARY, CONTEXT
+- `RiskLevel` - LOW, MEDIUM, HIGH
+- `Complexity` - LOW, MEDIUM, HIGH
+- `Severity` - BLOCKING, WARNING
+- `BuildSystem` - NPM, YARN, PNPM, MAKE, CARGO, GO, GRADLE, MAVEN, CUSTOM
+- `TestFramework` - JEST, PYTEST, GO_TEST, CARGO_TEST, JUNIT, MOCHA, VITEST, CUSTOM
+
+**Validation Functions:**
+- `validate_scout_a_response()` - Validate and parse Scout A response
+- `validate_scout_b_response()` - Validate and parse Scout B response
+- Schema version: `"1"` (fixed, versioned)
+
+#### 3.3 Scout A (Codebase Mapper) (`src/act/scouts/scout_a.py`)
+
+- System prompt with JSON schema v1 and read-only constraints
+- `ScoutA` class:
+  - `reset_context()` - Clear conversation history
+  - `query()` - Query with optional file list discovery
+  - `analyze_files()` - Query with specific file contents
+  - `find_relevant_files()` - Find files for a task
+  - `analyze_risk_zones()` - Analyze risk zones in files
+  - `identify_conventions()` - Identify code conventions
+  - `get_raw_response()` - Get last raw JSON response
+- Constants: `MAX_FILES_IN_CONTEXT = 100`, `MAX_FILE_CONTENT_SIZE = 50000`
+- Maintains conversation history for multi-turn queries
+- Factory function: `create_scout_a()`
+
+#### 3.4 Scout B (Build/Test Detective) (`src/act/scouts/scout_b.py`)
+
+- System prompt with JSON schema v1 and read-only constraints
+- `BUILD_CONFIG_FILES` - List of build/test config files to detect (package.json, pyproject.toml, Cargo.toml, go.mod, Makefile, jest.config.*, pytest.ini, etc.)
+- `ScoutB` class:
+  - `reset_context()` - Clear conversation history
+  - `query()` - Query with optional build configs and log content
+  - `discover_build_commands()` - Discover build system and commands
+  - `discover_test_commands()` - Discover test framework and commands
+  - `analyze_failure()` - Analyze build/test failure logs
+  - `detect_environment_issues()` - Detect environment problems
+  - `full_discovery()` - Complete build/test infrastructure analysis
+  - `get_raw_response()` - Get last raw JSON response
+- Constants: `MAX_LOG_SIZE = 20000`
+- Auto-detects and includes build config files in queries
+- Factory function: `create_scout_b()`
+
+#### 3.5 Public API (`src/act/scouts/__init__.py`)
+
+Exports all Scout components:
+- Exceptions: `ScoutError`, `LLMError`, `SchemaError`, `RetryExhaustedError`, `FileExclusionError`, `ScoutErrorType`
+- File filter: All filter functions and constants
+- Retry: `RetryConfig`, `retry_sync`, `retry_async`, `calculate_delay`, `is_retryable_error`
+- LLM client: `LLMClient`, `LLMMessage`, `LLMResponse`, `create_llm_client`
+- Schemas: All dataclasses, enums, and validation functions
+- Scout A: `ScoutA`, `create_scout_a`, `SCOUT_A_SYSTEM_PROMPT`
+- Scout B: `ScoutB`, `create_scout_b`, `SCOUT_B_SYSTEM_PROMPT`, `BUILD_CONFIG_FILES`
+
+### Validation results
+
+All validation criteria from the implementation plan pass:
+
+| Test | Command | Result |
+|------|---------|--------|
+| Unit tests | `uv run pytest tests/unit/ -v` | 444 passed |
+| Linting | `uv run ruff check src/` | All checks passed |
+| Type checking | `uv run mypy src/` | Success: no issues found in 30 source files |
+
+### Files created
+
+```
+src/act/scouts/exceptions.py
+src/act/scouts/file_filter.py
+src/act/scouts/retry.py
+src/act/scouts/llm_client.py
+src/act/scouts/schemas.py
+src/act/scouts/scout_a.py
+src/act/scouts/scout_b.py
+src/act/scouts/__init__.py (updated with exports)
+tests/unit/test_scouts_exceptions.py (17 tests)
+tests/unit/test_scouts_file_filter.py (34 tests)
+tests/unit/test_scouts_retry.py (22 tests)
+tests/unit/test_scouts_llm_client.py (20 tests)
+tests/unit/test_scouts_schemas.py (35 tests)
+tests/unit/test_scouts_scout_a.py (17 tests)
+tests/unit/test_scouts_scout_b.py (18 tests)
+```
+
+### Dependencies
+
+- Uses `anthropic` and `openai` packages (already in dependencies from Phase 0)
+- Integrates with `act.config.env` module for `LLMConfig` and `LLMBackend`
+
+### Design decisions
+
+1. **Separate LLM context per Scout** - Each Scout instance maintains its own conversation history
+2. **Schema versioning** - Fixed schema v1 with validation on parse
+3. **Lazy SDK initialization** - Anthropic/OpenAI clients created on first use
+4. **Thread pool for sync APIs** - Uses `run_in_executor` for blocking SDK calls in async context
+5. **JSON extraction from markdown** - Handles ```json code blocks in LLM responses
+6. **Comprehensive file exclusion** - Binary files, secrets, and common non-source directories excluded
+7. **Pull-based architecture** - Scouts are queried by Editor, not push-based
+
+### Next steps
+
+Proceed to **Phase 4: Editor — Orchestrator** as defined in `specs/implementation-plan.md`.
+
+---
