@@ -21,6 +21,8 @@ class LoopAction(Enum):
     REPLAN = "replan"  # Trigger REPLAN
     HARD_STOP = "hard_stop"  # Trigger hard stop
     SUCCESS = "success"  # Task completed successfully
+    STUCK = "stuck"  # Task is stuck (hard stop reached)
+    INFRA_ERROR = "infra_error"  # Infrastructure error
 
 
 @dataclass
