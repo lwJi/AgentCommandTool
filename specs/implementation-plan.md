@@ -157,6 +157,7 @@ src/
 - Format: `run_{YYYYMMDD}_{HHMMSS}_{random6chars}` (UTC timezone)
 - Ensure uniqueness via random suffix
 - Create run directory: `ARTIFACT_DIR/runs/{run_id}/`
+- Note: While run_id uses `YYYYMMDD_HHMMSS` format for readability, manifest timestamps use ISO8601 format (e.g., `2024-01-15T14:30:00Z`), both in UTC
 
 **Test:** Generate 100 run_ids in quick succession → all unique. Directory created at expected path. Timestamps are in UTC.
 
@@ -503,9 +504,9 @@ src/
 **Step 4.2.1: Implement pull-based Scout queries**
 
 - Editor initiates queries (not push from Scouts)
-- Synchronous blocking calls per Scout
-- Support parallel queries when Scout A and Scout B questions are independent
-- Use `asyncio.gather()` for concurrent Scout queries
+- Synchronous from Editor's perspective (Editor waits for all responses before proceeding)
+- Scout A and Scout B queries can execute in parallel using `asyncio.gather()` when questions are independent
+- Sequential execution when one Scout's answer depends on the other's response
 
 **Test:** Start task → Editor queries Scout A and Scout B in parallel when independent. Both responses received before proceeding. Sequential fallback when queries depend on each other.
 
